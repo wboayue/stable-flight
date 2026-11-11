@@ -1,6 +1,6 @@
 //! Measures the Alia 250's wing in X-Plane for fitting a sim model to it (#392), on
 //! [`airframes::alia250`]: steady level flight at several airspeeds, a climb at full power, and
-//! surface pulses and roll holds in level flight.
+//! surface pulses and roll and rudder holds in level flight.
 //!
 //! It flies a waypoint script (default `flights/alia_plane_probe.csv`, from Oceano, L52: a climb
 //! in hover, a transition, then level plane legs offshore at 48, 46, 44, and 40 m/s and a second
@@ -14,7 +14,11 @@
 //! the loops' together; the log names each pulse's start for the fit. After the pulses it holds
 //! the ailerons at `--roll-hold` open loop (the roll loop's output replaced) for 1.5 s right,
 //! 3 s left, and 1.5 s right, ending near wings level: the steady roll rate under a held
-//! aileron measures the roll damping. Each leg runs the schedule once.
+//! aileron measures the roll damping (#392). Then it holds the rudders at `--yaw-hold` open
+//! loop (the yaw loop's output replaced; the roll loop still flies the wings) for 4 s right,
+//! 8 s left, and 4 s right, ending near the leg's heading: the sideslip and yaw rate under a
+//! held rudder measure the weathercock, yaw damping, and dihedral (#458). Each leg runs the
+//! schedule once; `--no-pulses` skips the pulses, so the holds fit on the 3 km legs.
 //!
 //! The first recorded tick's UTC time is logged, to line the recording up with a side log of
 //! X-Plane's own values (engine thrust and power). It lands on the script's last waypoint and
@@ -51,8 +55,17 @@ const SETTLE_S: f32 = 5.0;
 const SPEED_BAND_MPS: f32 = 1.5;
 /// How close to level the wings must hold, in rad.
 const BANK_BAND_RAD: f32 = 3.0 * core::f32::consts::PI / 180.0;
-/// The roll holds: sign and seconds, right then left then right, so the bank comes back.
-const ROLL_HOLDS: [(f32, f32); 3] = [(1.0, 1.5), (-1.0, 3.0), (1.0, 1.5)];
+/// The open-loop holds: axis (0 roll, 2 yaw), sign, and seconds; on each axis right, then left
+/// twice as long, then right, so the bank or heading comes back. The rudder holds run long
+/// enough for the sideslip to settle through the yaw oscillation.
+const HOLDS: [(usize, f32, f32); 6] = [
+    (0, 1.0, 1.5),
+    (0, -1.0, 3.0),
+    (0, 1.0, 1.5),
+    (2, 1.0, 4.0),
+    (2, -1.0, 8.0),
+    (2, 1.0, 4.0),
+];
 /// Quiet before each pulse, in s.
 const QUIET_S: f32 = 4.0;
 /// Each pulse, in s.
@@ -83,6 +96,12 @@ struct Args {
     /// The roll holds' aileron command, in place of the roll loop's (normalized).
     #[arg(long, default_value_t = 0.5)]
     roll_hold: f32,
+    /// The yaw holds' rudder command, in place of the yaw loop's (normalized).
+    #[arg(long, default_value_t = 0.5)]
+    yaw_hold: f32,
+    /// Skip the surface pulses: only the roll and rudder holds on each leg.
+    #[arg(long)]
+    no_pulses: bool,
     /// Write one CSV row per tick to this file.
     #[arg(long)]
     record: Option<String>,
@@ -103,16 +122,20 @@ fn main() {
         .expect("X-Plane not ready");
 
     let injection = Rc::new(Cell::new(Vec3::zeros()));
-    let roll_hold = Rc::new(Cell::new(None));
+    let hold = Rc::new(Cell::new(None));
     let probe = Rc::new(RefCell::new(Probe::new(
-        (args.pulse, args.roll_hold),
+        Schedule {
+            pulse: args.pulse,
+            holds: Vec3::new(args.roll_hold, 0.0, args.yaw_hold),
+            pulses: !args.no_pulses,
+        },
         injection.clone(),
-        roll_hold.clone(),
+        hold.clone(),
     )));
     let mixer = ProbeMixer {
         inner: airframe.mixer,
         injection,
-        roll_hold,
+        hold,
     };
     let recorder = CsvRecorder::create(args.record.as_deref(), QuadPlaneColumns)
         .expect("failed to create the record CSV");
@@ -141,12 +164,13 @@ fn main() {
     info!("legs probed: {legs}");
 }
 
-/// The airframe's mixer with a probe's cruise moment added, and its roll moment replaced
-/// during a roll hold.
+/// The airframe's mixer with a probe's cruise moment added, and one axis's moment replaced
+/// during a hold.
 struct ProbeMixer<M> {
     inner: M,
     injection: Rc<Cell<Vec3>>,
-    roll_hold: Rc<Cell<Option<f32>>>,
+    /// The held axis and its moment.
+    hold: Rc<Cell<Option<(usize, f32)>>>,
 }
 
 impl<M: Mixer> Mixer for ProbeMixer<M> {
@@ -154,8 +178,8 @@ impl<M: Mixer> Mixer for ProbeMixer<M> {
         let mut controls = *controls;
         if let Some(cruise) = controls.cruise.as_mut() {
             cruise.moments += self.injection.get();
-            if let Some(roll) = self.roll_hold.get() {
-                cruise.moments.x = roll;
+            if let Some((axis, moment)) = self.hold.get() {
+                cruise.moments[axis] = moment;
             }
         }
         self.inner.mix(&controls)
@@ -175,20 +199,26 @@ enum Phase {
     Quiet(usize, f32),
     /// Pulse `n`; time in it.
     Pulse(usize, f32),
-    /// Quiet before the roll holds; time in it.
-    HoldQuiet(f32),
-    /// Roll hold `n`; time in it.
+    /// Quiet before hold `n`, the first on its axis; time in it.
+    HoldQuiet(usize, f32),
+    /// Hold `n`; time in it.
     Hold(usize, f32),
     /// This leg is done.
     Done,
 }
 
+/// What each leg flies: the pulses' moment, each axis's hold moment, and whether to pulse.
+struct Schedule {
+    pulse: f32,
+    holds: Vec3,
+    pulses: bool,
+}
+
 /// Runs each plane leg's pulse schedule.
 struct Probe {
-    pulse: f32,
-    roll_hold: f32,
+    schedule: Schedule,
     injection: Rc<Cell<Vec3>>,
-    roll_override: Rc<Cell<Option<f32>>>,
+    hold: Rc<Cell<Option<(usize, f32)>>>,
     phase: Phase,
     /// The current leg's waypoint, to tell legs apart.
     leg: Option<[f32; 3]>,
@@ -199,15 +229,14 @@ struct Probe {
 
 impl Probe {
     fn new(
-        (pulse, roll_hold): (f32, f32),
+        schedule: Schedule,
         injection: Rc<Cell<Vec3>>,
-        roll_override: Rc<Cell<Option<f32>>>,
+        hold: Rc<Cell<Option<(usize, f32)>>>,
     ) -> Self {
         Probe {
-            pulse,
-            roll_hold,
+            schedule,
             injection,
-            roll_override,
+            hold,
             phase: Phase::Settling(0.0),
             leg: None,
             elapsed_s: 0.0,
@@ -255,7 +284,11 @@ impl Probe {
                         "t {:.1} s: leg at {:.0} m/s steady ({airspeed:.1} m/s, {:.0} m MSL): pulsing",
                         self.elapsed_s, waypoint.cruise_speed_mps, state.position_m.z
                     );
-                    Phase::Quiet(0, 0.0)
+                    if self.schedule.pulses {
+                        Phase::Quiet(0, 0.0)
+                    } else {
+                        Phase::HoldQuiet(0, 0.0)
+                    }
                 } else {
                     Phase::Settling(held + dt)
                 }
@@ -264,13 +297,13 @@ impl Probe {
             Phase::Quiet(n, t) if t + dt >= QUIET_S => {
                 let (axis, sign) = PULSES[n];
                 let mut injection = Vec3::zeros();
-                injection[axis] = sign * self.pulse;
+                injection[axis] = sign * self.schedule.pulse;
                 self.injection.set(injection);
                 info!(
                     "t {:.3} s: pulse {} {:+.2} at {airspeed:.1} m/s",
                     self.elapsed_s,
                     AXES[axis],
-                    sign * self.pulse
+                    sign * self.schedule.pulse
                 );
                 Phase::Pulse(n, 0.0)
             }
@@ -280,20 +313,23 @@ impl Probe {
                 if n + 1 < PULSES.len() {
                     Phase::Quiet(n + 1, 0.0)
                 } else {
-                    Phase::HoldQuiet(0.0)
+                    Phase::HoldQuiet(0, 0.0)
                 }
             }
             Phase::Pulse(n, t) => Phase::Pulse(n, t + dt),
-            Phase::HoldQuiet(t) if t + dt >= QUIET_S => self.start_hold(0, airspeed),
-            Phase::HoldQuiet(t) => Phase::HoldQuiet(t + dt),
-            Phase::Hold(n, t) if t + dt >= ROLL_HOLDS[n].1 => {
-                if n + 1 < ROLL_HOLDS.len() {
-                    self.start_hold(n + 1, airspeed)
-                } else {
+            Phase::HoldQuiet(n, t) if t + dt >= QUIET_S => self.start_hold(n, airspeed),
+            Phase::HoldQuiet(n, t) => Phase::HoldQuiet(n, t + dt),
+            Phase::Hold(n, t) if t + dt >= HOLDS[n].2 => {
+                if n + 1 == HOLDS.len() {
                     self.quiet();
                     self.legs_probed += 1;
                     info!("t {:.1} s: leg probed", self.elapsed_s);
                     Phase::Done
+                } else if HOLDS[n + 1].0 != HOLDS[n].0 {
+                    self.quiet();
+                    Phase::HoldQuiet(n + 1, 0.0)
+                } else {
+                    self.start_hold(n + 1, airspeed)
                 }
             }
             Phase::Hold(n, t) => Phase::Hold(n, t + dt),
@@ -306,16 +342,17 @@ impl Probe {
     /// No injection, no hold.
     fn quiet(&self) {
         self.injection.set(Vec3::zeros());
-        self.roll_override.set(None);
+        self.hold.set(None);
     }
 
-    /// Starts roll hold `n`.
+    /// Starts hold `n`.
     fn start_hold(&mut self, n: usize, airspeed: f32) -> Phase {
-        let aileron = ROLL_HOLDS[n].0 * self.roll_hold;
-        self.roll_override.set(Some(aileron));
+        let (axis, sign, hold_s) = HOLDS[n];
+        let moment = sign * self.schedule.holds[axis];
+        self.hold.set(Some((axis, moment)));
         info!(
-            "t {:.3} s: roll hold {aileron:+.2} for {:.1} s at {airspeed:.1} m/s",
-            self.elapsed_s, ROLL_HOLDS[n].1
+            "t {:.3} s: {} hold {moment:+.2} for {hold_s:.1} s at {airspeed:.1} m/s",
+            self.elapsed_s, AXES[axis]
         );
         Phase::Hold(n, 0.0)
     }
