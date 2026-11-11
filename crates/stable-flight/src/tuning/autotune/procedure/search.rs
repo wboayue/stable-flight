@@ -159,7 +159,10 @@ impl Search {
     }
 
     /// The start gains with the searched term at `gain`, and I at the plan's
-    /// [`i_per_p`](crate::tuning::autotune::SearchPlan::i_per_p) of P if it sets one.
+    /// [`i_per_p`](crate::tuning::autotune::SearchPlan::i_per_p) of P if it sets one. The other
+    /// terms stay the start's: a rate search from a design keeps its D, since a D that grows
+    /// with P lets the search climb past where overshoot would stop it
+    /// (`architecture.md#autotune`, #683).
     fn with(&self, gain: f32) -> Gains {
         with_i_per_p(self.plan.term.with(self.start, gain), self.plan.i_per_p)
     }

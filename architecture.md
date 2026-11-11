@@ -1087,6 +1087,14 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * *Search* (`SearchPlan::copter`, after every loop is designed): the step search from the
     design, P bracketed from it in either direction, D as designed. Designing everything first keeps a loop still on its start gains from ringing through
     another's steps: `racer`'s pitch on its high start with 25 ms of delay (±2.8 rad/s, #518).
+    D stays fixed while P moves, though D/P then leaves the fitted lag: the fixed D is what lets
+    overshoot bound P. Rejected: D scaled with every P tried, so D/P stays the lag. Larger P then
+    brings larger D, and most searches end at the top of the range (2.7 after the back-off).
+    Only 24 of the 49 robustness tests passed, against 48 on fixed D (the 49th is ignored); 23
+    of the 72 runs ended `NotSettled`, mostly on pitch rate. `heavy_quad`'s noise rows missed
+    the spec 4 times each in 443–763 s, against none in 305–338 s. Also rejected: D/P kept only when the search lowers a start above
+    `max`. No robustness row or noise seed reaches that path (0 of 72 runs changed), since every
+    design on those plants sits under `max` (#683).
   * *Why search rather than trust the design:* on QuadCopterX in RealFlight the fits scatter
     (acceleration −74 to 98 rad/s² on one axis within a run, delay 1–10 ticks, against no
     such spread on the sim), so the design alone left a loop slower than its start or put
