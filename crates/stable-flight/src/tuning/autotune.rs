@@ -185,8 +185,9 @@ impl StagePlan<CopterSide> {
     /// [`copter_design_search`](Self::copter_design_search)'s rate design cancels the motor
     /// lag with D, which on the Alia 250's 0.17 s lag designs rate P 28.6 and D 4.9; its
     /// search, whose P tops out at 3, lowers P to 3 but keeps that D, and the Alia never
-    /// settles. Designed without D, from rate P 1 and 3, every stage tunes, to rate P within
-    /// 4% of the step search's, in about 13 min of sim time against its 11–15 (#572).
+    /// settles. Designed without D, from rate P 1 and 3, every loop is designed, then tuned, to
+    /// rate P within 4% of the step search's, in about 13 min of sim time against its 11–15
+    /// (#572).
     ///
     /// # Examples
     ///
