@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Design search
 
 **Design search** (`StagePlan::copter_design_search`, the copter default;
@@ -240,7 +242,7 @@ each loop from its design, so the search starts near its answer.
   0.22 rad/s against a 0.05 rad/s trim share, so the transfer failed 37 of 49 robustness
   tests. Low-passed over 1 s, it lowered `quad_x`'s pitch rate P 18% and left `racer`'s
   steps overshooting the other way (3.5–4.1%).
-* The trim rows pass, with the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
+* The trim rows pass, with the rate I term limited in moment (*Retuning `i` is bumpless* in [config ownership](config.md#config-ownership), #374).
   `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
   abort is the safe outcome, and the row stays ignored.
 

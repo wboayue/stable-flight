@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Plane autotune
 
 * **Plane side** (`PlaneAutotune`): probes on the plane's roll and pitch rate and angle loops,

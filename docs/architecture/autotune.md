@@ -1,9 +1,11 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Autotune
 
 PID autotune tunes a fresh airframe from a bad or unflyable start without a pilot nursing it.
 The copter default (`StagePlan::copter_design_search`) fits each rate axis in hover, designs
 its gains from the fit, then searches each loop's gain by steps from the design. Relay
-feedback and a search from the start gains were rejected (**Design search**, below).
+feedback and a search from the start gains were rejected (see the [design search](autotune-design-search.md)).
 
 * **Probe and host** (`tuning::Probe`; `Tunable<L>`, implemented by `CopterStabilizer` for
   its `TunedLoop`s and `PlaneStabilizer` for its `PlaneLoop`s): a probe
@@ -189,4 +191,6 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   ([`robustness`](../../crates/stable-flight-sim/README.md#closed-loop-tests)). Rows that fail stay
   ignored on the issue blocking them rather than loosening the targets.
 * **Design search** (`StagePlan::copter_design_search`, the copter default): fit, design,
-  then search; see [Design search](autotune-design-search.md#design-search) below.
+  then search: [`autotune-design-search.md`](autotune-design-search.md).
+* **Plane side** (`PlaneAutotune`) and its design method:
+  [`autotune-plane.md`](autotune-plane.md).

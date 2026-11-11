@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Flight Regimes
 
 A VTOL flies two regimes, copter (rotor-borne) and plane (wing-borne), and moves between them

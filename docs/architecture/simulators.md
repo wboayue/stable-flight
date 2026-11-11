@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Simulator Backends
 
 Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its dependencies

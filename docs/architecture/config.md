@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Config Ownership
 
 Controllers hold only state (integral and derivative history); their gains and limits are a
