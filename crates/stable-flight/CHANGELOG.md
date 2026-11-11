@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `LoopShapingConfig` has a new field, `cancel_lag`: a struct literal without
+  `..COPTER_LOOP_SHAPING` adds `cancel_lag: true` to design as before (#572).
 - **Breaking (behavior):** a search whose start and verify both miss the criterion keeps the
   verified gain when its steps overshoot and bounce back no more than the start's, instead of
   the fallback (`Outcome::Tuned`): a start that misses is no gain to return to over one that

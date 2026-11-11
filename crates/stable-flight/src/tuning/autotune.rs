@@ -200,20 +200,26 @@ impl StagePlan<CopterSide> {
     /// assert_eq!(plan[4].target, TunedLoop::RollRate);
     /// ```
     pub fn large_copter_design_search() -> [Self; 8] {
-        let [roll_rate, pitch_rate, roll, pitch] = Self::large_copter_search();
-        let design = |target| Self {
-            target,
+        let search = Self::large_copter_search();
+        let [roll_rate, pitch_rate, roll, pitch] = search.map(|stage| Self {
+            target: stage.target,
             method: Method::Design(DesignPlan::large_copter()),
-        };
+        });
+        let [
+            search_roll_rate,
+            search_pitch_rate,
+            search_roll,
+            search_pitch,
+        ] = search;
         [
-            design(TunedLoop::RollRate),
-            design(TunedLoop::PitchRate),
-            design(TunedLoop::Roll),
-            design(TunedLoop::Pitch),
             roll_rate,
             pitch_rate,
             roll,
             pitch,
+            search_roll_rate,
+            search_pitch_rate,
+            search_roll,
+            search_pitch,
         ]
     }
 }
