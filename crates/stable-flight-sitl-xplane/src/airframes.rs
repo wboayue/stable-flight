@@ -202,10 +202,12 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                         i: 10.0,
                         ff: 0.859,
                     },
+                    // The sim Alia's: its feedforward from the yaw damping and rudder power
+                    // fitted to X-Plane's rudder holds (#458).
                     yaw: RateGains {
                         p: 0.1,
                         i: 0.12,
-                        ff: 3.570,
+                        ff: 0.999,
                     },
                     ..plane_rate
                 },

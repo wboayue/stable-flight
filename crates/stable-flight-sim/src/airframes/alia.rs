@@ -56,15 +56,18 @@ const MAX_PITCH_UP_RAD: f32 = 15.0 * core::f32::consts::PI / 180.0;
 /// | Pusher | `command · (5,100 − 21 · u)` N | X-Plane's thrust at full command, 5.1 kN near 0 to 4.1 kN at 46 m/s; 2.5 kN static at half |
 /// | Pitch | `Cm = 0.068 − 1.48 α + 1.09 δe` | least squares of the trim elevator against α (servo 0.02 at 3.5°, 0.53 at 10.2°), with `Cm_δe` from pitch pulses (~45 °/s² per unit command at 45 m/s) |
 /// | Roll | `Cl_δa = 0.077`/rad, `Cl_p = −0.38` | roll pulses, ~50 °/s² per unit command at 45 m/s; the steady rate under 24 half-aileron holds (`plane-probe-xplane`, 40–48 m/s), 7–10 °/s, `Cl_p` −0.29 to −0.46, mean −0.39 (right rolls −0.35, left −0.42) |
-/// | Yaw | `Cn_δr = 0.014`/rad | yaw pulses, ~25 °/s² per unit command |
+/// | Yaw | `Cn = 0.098 β − 0.032 p̂ − 0.081 r̂ + 0.027 δr` (p̂, r̂ = rate · b/2V) | least squares of the yaw acceleration (this model's inertia) over 24 open-loop rudder holds at ±0.15, the roll loop flying the wings (`plane-probe-xplane --no-roll-holds`, 8 legs, 40–48 m/s): per leg `Cn_β` 0.094–0.104, `Cn_r` −0.067 to −0.107, `Cn_p` −0.014 to −0.051, `Cn_δr` 0.026–0.030, R² 0.74–0.95 but one leg's 0.40. Yaw pulses read `Cn_δr` 0.014; held at that, the fit scatters `Cn_r` tenfold |
+/// | Side force | `CY = −1.05 β − 0.11 δr` | the same holds' lateral acceleration, R² 0.96–0.97 on four legs (`CY_β` −1.02 to −1.12) |
+/// | Roll into a turn | `Cl_r = 0.21` | the aileron that holds a steady 20° bank, 0.17–0.18 against the turn averaged both ways over three runs' turns (#537 read 0.20, which 0.25 matches): the rudder holds' roll fits scatter (`Cl_r` −0.01 to 0.21, R² 0.26–0.62) |
 ///
-/// **Not measured:** the other damping and sideslip terms take [`plane`](super::plane)'s (the
-/// Aerosonde's) coefficients, `c_pitch_q` set to a larger aircraft's (the lateral-directional
-/// ones, #458). The stall is put past the elevator's reach (17°), which the probes never
-/// passed. The pusher's thrust line sits on the center of gravity (X-Plane hints at a nose-up
-/// moment at full power, unmeasured). The forward transition accelerates through 30–40 m/s
-/// slower than X-Plane's: 42 s from a hover to the 40 m/s gate against X-Plane's 27 s, the lift
-/// rotors' drag in the airflow likely too high.
+/// **Not measured:** the roll's sideslip and rudder terms take [`plane`](super::plane)'s (the
+/// Aerosonde's) coefficients: the rudder holds' fits scatter (`Cl_β` −0.12 to +0.03, R²
+/// 0.26–0.62). The roll step turns most on `Cl_r` (overshoot 6.7% at 0.05, 18.5% at 0.3)
+/// (#458). `c_pitch_q` is a larger aircraft's. The stall is put past the elevator's reach
+/// (17°), which the probes never passed. The pusher's thrust line sits on the center of
+/// gravity (X-Plane hints at a nose-up moment at full power, unmeasured). The forward
+/// transition accelerates through 30–40 m/s slower than X-Plane's: 42 s from a hover to the
+/// 40 m/s gate against X-Plane's 27 s, the lift rotors' drag in the airflow likely too high.
 ///
 /// **Controllers:** the hover side is [`alia250_hover`]'s. The plane side is tuned on this
 /// model (#392): px4xplane's rate P and I where they hold, the rate feedforward from the model,
@@ -96,11 +99,11 @@ pub fn alia250() -> QuadPlaneAirframe {
             stall_sharpness: 50.0,
             c_drag_0: 0.084,
             oswald: 0.8,
-            c_side_beta: -0.98,
-            c_side_rudder: -0.2,
+            c_side_beta: -1.05,
+            c_side_rudder: -0.11,
             c_roll_beta: -0.12,
             c_roll_p: -0.38,
-            c_roll_r: 0.14,
+            c_roll_r: 0.21,
             c_roll_aileron: 0.077,
             c_roll_rudder: -0.004,
             c_pitch_0: 0.068,
@@ -110,10 +113,10 @@ pub fn alia250() -> QuadPlaneAirframe {
             c_pitch_q: -25.0,
             c_pitch_elevator: 1.09,
             surface_stall_share: 0.0,
-            c_yaw_beta: 0.1,
-            c_yaw_p: 0.022,
-            c_yaw_r: -0.15,
-            c_yaw_rudder: 0.014,
+            c_yaw_beta: 0.098,
+            c_yaw_p: -0.032,
+            c_yaw_r: -0.081,
+            c_yaw_rudder: 0.027,
         },
         // Ailerons 20° up and 10° down (the mean), elevators ±20°, rudders ±30° (`.acf`).
         max_deflection_rad: Vec3::new(

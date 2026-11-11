@@ -1003,10 +1003,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     times, 1.03, #635). Holding or ending past doubles I where a sag raises it by half: the
     offset is a moment only I supplies, and at a sag's rate the X-Plane Alia 250's I climbed
     from 0.01 to 0.85 through all eight pairs and its 20° steps still ended 1.09–1.22 past;
-    the sim Alia at twice its yaw-rate roll moment tunes from every start by the seventh (#537).
+    the sim Alia, its yaw-rate roll moment fitted to X-Plane's held aileron (#458), tunes from
+    every start by the seventh, and at 1.5 doesn't (#537).
   * On the sim it tunes the airplane, the eXplora, the Titan Cobra, and the Alia 250 to the
     plane spec (`tests/common/plane_spec.rs`) from their own gains, a third, and three times
-    them: 42–60 s on the airplane and eXplora, 70–90 s on the Cobra, 540–575 s on the Alia,
+    them: 42–60 s on the airplane and eXplora, 70–90 s on the Cobra, 434–512 s on the Alia,
     whose 567 m turns and 1.5 s roll time constant stretch every settle (#534). Model design
     with a speed term in the fit (from the identification or from held pitch steps) met the
     spec no more often than without (15 and 12 of 32 rows against 12) before the settle and
