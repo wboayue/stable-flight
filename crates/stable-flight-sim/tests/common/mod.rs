@@ -341,6 +341,24 @@ impl AutotuneRun {
         let tuned = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
         self.outcomes() == [&designed[..], &yaw, &tuned].concat()
     }
+
+    /// Whether every stage of `StagePlan::large_copter_design_search` ran and ended as planned:
+    /// each roll and pitch loop designed, then each searched from its design, every search
+    /// `Tuned` or `Kept`.
+    pub fn all_designed_then_searched(&self) -> bool {
+        let outcomes = self.outcomes();
+        let (designs, searches) = outcomes.split_at(outcomes.len().min(spec::TUNED.len()));
+        let targets =
+            |stages: &[(TunedLoop, _)]| stages.iter().map(|(target, _)| *target).eq(spec::TUNED);
+        targets(designs)
+            && targets(searches)
+            && designs
+                .iter()
+                .all(|(_, outcome)| *outcome == Ok(Outcome::Designed))
+            && searches
+                .iter()
+                .all(|(_, outcome)| matches!(outcome, Ok(Outcome::Tuned | Outcome::Kept(_))))
+    }
 }
 
 /// Runs `plan` on `plant` settled in a [`hover`], until it ends or `timeout_s` passes.

@@ -43,21 +43,14 @@ fn autotune_converges_on_the_large_copter_search() {
 }
 
 /// From rate P 1 and 3 with angle P 1, the large-copter design search designs every loop, then
-/// tunes or keeps each, to the airframe's gains: designed without rate D, each rate search
-/// starts about 10% above where it ends (#572).
+/// tunes or keeps each, to the airframe's gains: designed without rate D, rate P 1.65 and 2.75,
+/// and searched to 1.49 and 2.48 (#572).
 #[test]
 fn autotune_converges_on_the_large_copter_design_search() {
-    converges_on(&StagePlan::large_copter_design_search(), |run| {
-        let outcomes = run.outcomes();
-        outcomes.len() == 8
-            && outcomes.iter().enumerate().all(|(stage, (_, outcome))| {
-                if stage < 4 {
-                    *outcome == Ok(Outcome::Designed)
-                } else {
-                    matches!(outcome, Ok(Outcome::Tuned | Outcome::Kept(_)))
-                }
-            })
-    });
+    converges_on(
+        &StagePlan::large_copter_design_search(),
+        AutotuneRun::all_designed_then_searched,
+    );
 }
 
 /// Runs `plan` from rate P 1 and 3 with angle P 1 and checks that its outcomes are `complete`

@@ -115,18 +115,18 @@ pub enum DesignError {
     NoWingDesign,
 }
 
-/// Rate gains for `model`: D cancels the motor lag (with `config`'s
-/// [`cancel_lag`](LoopShapingConfig::cancel_lag); else D is 0), and P puts the crossover where
-/// the loop keeps `config`'s rate margin; I stays `start`'s, since it holds trim rather than
-/// shaping the response.
+/// Rate gains for `model`: P puts the crossover where the loop keeps `config`'s rate margin; D
+/// cancels the motor lag or is 0 ([`cancel_lag`](LoopShapingConfig::cancel_lag)); I stays
+/// `start`'s, since it holds trim rather than shaping the response.
 ///
-/// D/P is the fitted lag `τ`, so the PD's zero `1 + τ·s` cancels the lag's pole. P is
-/// `1/|C·G·F|` at the first frequency where the phase of `C·G·F` falls to `−180° + margin`,
-/// with `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P (`C = 1` without the lag cancelled), `G` the model's
-/// [`response`](RateModel::response), and `F` the `gyro` filters (the stabilizer's
+/// With the lag cancelled, D/P is the fitted lag `τ`, so the PD's zero `1 + τ·s` cancels the
+/// lag's pole, and `C = 1 + τ·(1 − z⁻¹)/dt` is the PD at unit P; otherwise D is 0 and `C = 1`.
+/// P is `1/|C·G·F|` at the first frequency where the phase of `C·G·F` falls to
+/// `−180° + margin`, with `G` the model's [`response`](RateModel::response) and `F` the `gyro`
+/// filters (the stabilizer's
 /// [`gyro_filters_on`](crate::stabilizers::copter::CopterStabilizerConfig::gyro_filters_on)
-/// the axis: its notch, if on, and its low-pass) that the loop's P and D both act through. Its lag at the crossover is most of the
-/// margin: on `quad_x` at 40 Hz, a design that leaves it out keeps about 2° of its 65° (#373).
+/// the axis: its notch, if on, and its low-pass) that the loop's P and D both act through. Its
+/// lag at the crossover is most of the margin: on `quad_x` at 40 Hz, a design that leaves it out keeps about 2° of its 65° (#373).
 /// The kept I isn't in that loop: its lag at the crossover costs the flown loop a little margin
 /// (0.6° at I 0.2 over seven ticks of delay). A fitted integrator past 1 (`r₁ + r₂ > 1`, an
 /// unstable pole from noise, whose phase meets no crossover) is held at 1, the lag kept.
