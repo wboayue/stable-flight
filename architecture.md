@@ -1069,6 +1069,21 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     from settling (#518). Only the loop's axis counts, since the other may still ring on its
     start gains. A ceiling on the designed P can't tell those apart: healthy sim designs reach
     P 4.66 (`quad_x` clean), and 31× a low start.
+  * *Full-size multirotor* (`StagePlan::large_copter_design_search`,
+    `LARGE_COPTER_LOOP_SHAPING`): rate D 0, rate P for the 65° margin through the motor lag,
+    the start's rate I kept, then the large-copter search. Cancelling the lag puts the
+    crossover where the delay and gyro filters leave the margin, about 50 rad/s on every sim
+    copter: 1.25–2.5× 1/lag on `quad_x`, `heavy_quad`, and `racer`, 8.5× on the Alia 250's
+    0.17 s lag. The fit is exact there (lag 0.170 s, roll 1.74 and pitch 1.04 rad/s² on any
+    window), so the design is right on the clean model: rate P 28.6 and 47.7 with D 4.9 and
+    8.1 meet the large steps' spec. But the search after it, its P capped at 3, lowers P and
+    keeps D, and the Alia never settles; and under gyro noise that D clips every loop and the
+    run loses altitude. Without D, from rate P 1 and 3, the design gives P 1.65 and 2.75 and
+    the search ends at 1.49 and 2.48 (hand tune 1.52, 2.57) in 766 s, against 11–15 min for
+    the search alone. Rejected: the search's rate P range raised to 100 (P climbs to 69,
+    1212 s); the designed P capped at 3 with D scaled (pitch angle design fails, 2 misses);
+    D at a quarter or half of the lag's (5.8% overshoot; clipping); the design alone, without
+    the search (the noise above) (#572).
   * *Search* (`SearchPlan::copter`, after every loop is designed): the step search from the
     design, P bracketed from it in either direction, D as designed. Designing everything first keeps a loop still on its start gains from ringing through
     another's steps: `racer`'s pitch on its high start with 25 ms of delay (±2.8 rad/s, #518).
