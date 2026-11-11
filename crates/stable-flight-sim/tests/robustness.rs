@@ -17,8 +17,8 @@ use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
 /// Simulated seconds a row's autotune may take: `heavy_quad`'s CG offset from the high start,
 /// then the slowest passing row (280 s with the yaw search, #296), plus 25%. The ×3 starts
-/// under noise now come closest: 303–334 s over seeds 1–5, `quad_x`'s seed 5 the slowest
-/// (#673).
+/// under noise now come closest: 299–343 s over seeds 1–5, `quad_x`'s seed 5 the slowest
+/// (#673, #604).
 const BUDGET_S: f32 = 350.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.
@@ -129,10 +129,8 @@ rows! {
     racer_combined_high: racer, Combined, High;
 }
 
-/// The noise rows that pass hold on other noise seeds: `quad_x` and `heavy_quad` from both
-/// starts, and `racer` from the high start, on seeds 2–5 (the rows fly seed 1). `racer`'s low
-/// start, which passes on seed 1, keeps its yaw rate start as worse on seed 2, whose steps
-/// overshoot 15% (#604).
+/// The noise rows hold on other noise seeds: every airframe from both starts on seeds 2–5 (the
+/// rows fly seed 1).
 #[test]
 fn noise_rows_pass_on_other_seeds() {
     for (name, airframe, starts) in [
@@ -146,7 +144,7 @@ fn noise_rows_pass_on_other_seeds() {
             airframes::heavy_quad(),
             &[Start::Low, Start::High],
         ),
-        ("racer", airframes::racer(), &[Start::High]),
+        ("racer", airframes::racer(), &[Start::Low, Start::High]),
     ] {
         for &start in starts {
             for seed in 2..=5 {

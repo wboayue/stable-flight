@@ -58,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `COPTER_YAW_RATE_STEP` (and `COPTER_YAW_RATE_TEST_STEP`, built on
+  it) is filtered at 10 Hz, as ArduPilot filters a yaw twitch (`AUTOTUNE_Y_FILT_FREQ`), and
+  `SearchPlan::copter_yaw_rate` confirms a bracket point on 3 passing pairs. Under gyro noise
+  the yaw search no longer reads noise as overshoot, so it lands within the step spec on
+  every noise seed; on the sim's clean `racer` it picks yaw P 1.18 against 0.91 (#604).
 - **Breaking:** `IdentifyConfig` has a `noisy: Option<IdentifyExtension>` field, how a
   window that reads noisy goes on exciting (amplitude and whole length); struct literals add
   it (`None` keeps the old behavior). `COPTER_IDENTIFY` extends a noisy window to 8 s at
