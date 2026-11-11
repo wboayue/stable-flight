@@ -18,7 +18,9 @@
 //! loop (the yaw loop's output replaced; the roll loop still flies the wings) for 4 s right,
 //! 8 s left, and 4 s right, ending near the leg's heading: the sideslip and yaw rate under a
 //! held rudder measure the weathercock, yaw damping, and dihedral (#458). Each leg runs the
-//! schedule once; `--no-pulses` skips the pulses, so the holds fit on the 3 km legs.
+//! schedule once; `--no-pulses` skips the pulses, so the holds fit on the 3 km legs, and
+//! `--no-roll-holds` the roll holds: the roll loop's I term winds up under a held aileron and
+//! saturates the ailerons the other way on release, swinging the bank past 50° (#458).
 //!
 //! The first recorded tick's UTC time is logged, to line the recording up with a side log of
 //! X-Plane's own values (engine thrust and power). It lands on the script's last waypoint and
@@ -102,6 +104,9 @@ struct Args {
     /// Skip the surface pulses: only the roll and rudder holds on each leg.
     #[arg(long)]
     no_pulses: bool,
+    /// Skip the roll holds: only the rudder holds after any pulses.
+    #[arg(long)]
+    no_roll_holds: bool,
     /// Write one CSV row per tick to this file.
     #[arg(long)]
     record: Option<String>,
@@ -128,6 +133,7 @@ fn main() {
             pulse: args.pulse,
             holds: Vec3::new(args.roll_hold, 0.0, args.yaw_hold),
             pulses: !args.no_pulses,
+            roll_holds: !args.no_roll_holds,
         },
         injection.clone(),
         hold.clone(),
@@ -207,11 +213,24 @@ enum Phase {
     Done,
 }
 
-/// What each leg flies: the pulses' moment, each axis's hold moment, and whether to pulse.
+/// What each leg flies: the pulses' moment, each axis's hold moment, and whether to pulse and
+/// to hold the roll.
 struct Schedule {
     pulse: f32,
     holds: Vec3,
     pulses: bool,
+    roll_holds: bool,
+}
+
+impl Schedule {
+    /// The first of [`HOLDS`] a leg flies.
+    fn first_hold(&self) -> usize {
+        if self.roll_holds {
+            0
+        } else {
+            HOLDS.iter().position(|hold| hold.0 != 0).unwrap_or(0)
+        }
+    }
 }
 
 /// Runs each plane leg's pulse schedule.
@@ -287,7 +306,7 @@ impl Probe {
                     if self.schedule.pulses {
                         Phase::Quiet(0, 0.0)
                     } else {
-                        Phase::HoldQuiet(0, 0.0)
+                        Phase::HoldQuiet(self.schedule.first_hold(), 0.0)
                     }
                 } else {
                     Phase::Settling(held + dt)
@@ -313,7 +332,7 @@ impl Probe {
                 if n + 1 < PULSES.len() {
                     Phase::Quiet(n + 1, 0.0)
                 } else {
-                    Phase::HoldQuiet(0, 0.0)
+                    Phase::HoldQuiet(self.schedule.first_hold(), 0.0)
                 }
             }
             Phase::Pulse(n, t) => Phase::Pulse(n, t + dt),
