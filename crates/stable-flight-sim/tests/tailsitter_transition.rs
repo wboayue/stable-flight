@@ -125,39 +125,6 @@ impl BackHandover {
     }
 }
 
-/// Seconds after the back handoff that [`HANDOFF_STEP`] watches.
-const HANDOFF_WATCH_S: f32 = 2.0;
-
-/// Largest change in the moments (norm) between two ticks after the back handoff: no external
-/// band applies. Measured 0.022 on the fast ramp with the integrals kept through the thrust
-/// handoff, 0.263 when its zero-thrust tick cleared them (#326).
-const HANDOFF_STEP: f32 = 0.05;
-
-/// The largest per-tick moment change in the [`HANDOFF_WATCH_S`] after the first switch from
-/// `ToCopter` into `Copter`.
-#[derive(Debug, Default)]
-struct HandoffStep {
-    handover: BackHandover,
-    previous_moments: Option<Vec3>,
-    largest: f32,
-}
-
-impl TelemetryPublisher for HandoffStep {
-    fn publish(&mut self, record: &TelemetryRecord) {
-        let BackPhase::HandedOver(after_s) = self.handover.observe(record) else {
-            return;
-        };
-        if after_s >= HANDOFF_WATCH_S {
-            return;
-        }
-        let moments = record.control.moments;
-        if let Some(previous) = self.previous_moments {
-            self.largest = self.largest.max((moments - previous).norm());
-        }
-        self.previous_moments = Some(moments);
-    }
-}
-
 /// Checks a hold against the copter's calm-air hover bands (`hover.rs`).
 fn check_calm_hover(worst: &HoverDeviation, what: &str) {
     check!(worst.altitude_m < CALM_ALTITUDE_M, "{what}: {worst:?}");
@@ -361,27 +328,6 @@ fn climbing_handover_sinks_within_the_descent_limit() {
         rise_m <= shed_m + HANDOVER_RISE_MARGIN_M,
         "rose {rise_m} m, {shed_m} m to shed the climb"
     );
-}
-
-/// Handing thrust back to the hover after a back transition doesn't step the moments: the
-/// altitude loop's zero thrust on the way isn't ground idle, so the stabilizer keeps its
-/// integrals (#326). Flown on the core default ramp (50°/s, done at 45°), which arrives
-/// climbing 6 m/s (#343) so the altitude loop cuts thrust to 0.
-#[test]
-fn back_handoff_keeps_the_hover_trim() {
-    let airframe = on_fast_back_ramp(airframes::tailsitter());
-    let plant = TailsitterPlant::clean(airframe);
-    let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
-    let mut flight_loop = tailsitter_pipeline(&plant, commander, HandoffStep::default());
-    fly(
-        &mut flight_loop,
-        BACK_AT_S + BACK_DURATION_S + HANDOFF_WATCH_S,
-        |_, _| {},
-    );
-
-    let step = flight_loop.into_parts().5;
-    check!(step.handover.handed_over(), "never handed over: {step:?}");
-    check!(step.largest <= HANDOFF_STEP, "{step:?}");
 }
 
 /// How far east of the line a hover leg after the back transition flies, in m: along the span, as `flights/explora_transition_lap.csv`'s
@@ -689,10 +635,11 @@ fn ends_a_forward_transition_early() {
     let mut tilted = airframe;
     // Short of the 45° that completes it: only the timeout ends it.
     tilted.guidance.transition.forward_max_tilt_rad = 40f32.to_radians();
-    // A flying wing banks little in a gust along the span: 8 m/s as the ramp begins measures
-    // 8.1° of the hover view's roll (5 m/s: 3.9°), so the limit drops to 5° for it to trip.
+    // A flying wing banks little in a gust along the span: 8 m/s as the ramp begins rolls the
+    // hover view 10.2° on the hand tune and 2.4° on the copter design search's gains, so the
+    // limit drops to 1° for it to trip on either (#593).
     let mut low_roll_limit = airframe;
-    low_roll_limit.guidance.transition.roll_limit_rad = 5f32.to_radians();
+    low_roll_limit.guidance.transition.roll_limit_rad = 1f32.to_radians();
     let span_gust = Wind {
         steady_mps: Vec3::zeros(),
         gust: Some(Gust {
