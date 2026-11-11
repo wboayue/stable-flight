@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Link
 
 `stable-flight-link` is the native protocol between the flight controller and a companion

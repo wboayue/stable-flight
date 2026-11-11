@@ -1,3 +1,5 @@
+Part of the [architecture overview](../../architecture.md).
+
 ## Flight Loop and Runners
 
 `FlightLoop` (core) owns the six components and runs one tick per `step(dt)`, with no notion of
