@@ -815,10 +815,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   met the criterion; otherwise it need only meet the criterion. A too-high start fails the
   criterion yet settles fast, overshooting within the settle band, so holding the result to
   it would keep the high gain (#361). A result that misses the criterion too is still kept if
-  it overshoots and bounces back no more than that start. On the yaw plan before its 10 Hz
-  filter and 3 passing pairs (#604), under gyro noise, `racer`'s low start on seed 2 went back
-  to yaw P 1.5, overshooting 15%, over a verify at P 0.61 that bounced back 11%; the verify
-  meets the step spec, as does seed 3's at P 0.80 with a 20 Hz filter. Searching on below the
+  it misses by no more than that start, on each metric the criterion reads (overshoot,
+  bounce-back, and for an angle loop how far steps end past the step). On a yaw plan at 40 Hz with 2
+  passing pairs (#604 settled on 10 Hz and 3), under gyro noise, `racer`'s low start on seed 2
+  went back to yaw P 1.5, overshooting 15%, over a verify at P 0.61 that bounced back 11%; the
+  verify meets the step spec, as does seed 3's at P 0.80 at 20 Hz with 2 pairs. Searching on below the
   failed verify met it too, but took 20–25 s more, which the ×3 rows (up to 343 s of 350)
   can't spare. No row of the current robustness table reaches the case (#680). A start above the search's maximum isn't flown: it's
   lowered to the maximum and committed at once, so the vehicle settles on it and it stays if

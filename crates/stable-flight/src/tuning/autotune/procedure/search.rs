@@ -214,8 +214,8 @@ impl Search {
 
     /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping):
     /// - fly no worse than a baseline that met the criterion ([`Acceptance`]);
-    /// - with a baseline that failed it, meet the criterion, or else overshoot and bounce back
-    ///   no more than the baseline did;
+    /// - with a baseline that failed it, meet the criterion, or else miss it by no more than
+    ///   the baseline did (`Criterion::no_further_than`);
     /// - with no baseline (the start's steps weren't flown, aborted, or kept clipping), meet
     ///   the criterion.
     ///
@@ -233,10 +233,11 @@ impl Search {
             ..
         } = self.plan;
         let accepted = complete
+            // An empty baseline doesn't pass the criterion, nor is a verify closer than it.
             && if criterion.passes(&self.baseline) {
                 acceptance.accepts(&criterion, &self.baseline, &steps)
             } else {
-                criterion.passes(&steps) || closer_than_baseline(&self.baseline, &steps)
+                criterion.passes(&steps) || criterion.no_further_than(&self.baseline, &steps)
             };
         if accepted {
             self.finish(self.with(gain), Outcome::Tuned, Some(steps))
@@ -300,13 +301,4 @@ impl Search {
             baseline: Some(self.baseline),
         }
     }
-}
-
-/// Whether `verify`'s mean overshoot and bounce-back are each no higher than `baseline`'s: a
-/// result closer to the criterion than a start that failed it. An empty baseline (no valid
-/// steps) isn't one to be closer than.
-fn closer_than_baseline(baseline: &StepSummary, verify: &StepSummary) -> bool {
-    let no_higher = |base: Option<f32>, value: Option<f32>| matches!((base, value), (Some(base), Some(value)) if value <= base);
-    no_higher(baseline.overshoot.mean(), verify.overshoot.mean())
-        && no_higher(baseline.bounce_back.mean(), verify.bounce_back.mean())
 }

@@ -783,17 +783,38 @@ impl Criterion {
             max_bounce_back,
             settled_past,
         } = *self;
-        let overshoot = match settled_past {
-            Some(_) => steps.overshoot_past_end.mean(),
-            None => steps.overshoot.mean(),
-        };
-        let (Some(overshoot), Some(bounce_back)) = (overshoot, steps.bounce_back.mean()) else {
+        let (Some(overshoot), Some(bounce_back)) =
+            (self.overshoot(steps), steps.bounce_back.mean())
+        else {
             return false;
         };
         let ended_past = steps.final_value.max - 1.0;
         overshoot <= max_overshoot
             && bounce_back <= max_bounce_back
             && settled_past.is_none_or(|limit| ended_past <= limit)
+    }
+
+    /// Whether `verify` misses it by no more than `baseline` does: its overshoot (as
+    /// [`passes`](Self::passes) reads it), bounce-back, and, with `settled_past`, how far its
+    /// steps end past the step, each no higher than `baseline`'s. An empty baseline (no valid
+    /// steps) isn't one to be no further from.
+    fn no_further_than(&self, baseline: &StepSummary, verify: &StepSummary) -> bool {
+        let Self::Overshoot { settled_past, .. } = *self;
+        let no_higher = |base: Option<f32>, value: Option<f32>| no_worse(base, value, |base| base);
+        baseline.count() > 0
+            && no_higher(self.overshoot(baseline), self.overshoot(verify))
+            && no_higher(baseline.bounce_back.mean(), verify.bounce_back.mean())
+            && (settled_past.is_none() || verify.final_value.max <= baseline.final_value.max)
+    }
+
+    /// The overshoot it judges: from where each step ended with `settled_past`, else from the
+    /// step.
+    fn overshoot(&self, steps: &StepSummary) -> Option<f32> {
+        let Self::Overshoot { settled_past, .. } = *self;
+        match settled_past {
+            Some(_) => steps.overshoot_past_end.mean(),
+            None => steps.overshoot.mean(),
+        }
     }
 
     /// The most bounce-back it allows.

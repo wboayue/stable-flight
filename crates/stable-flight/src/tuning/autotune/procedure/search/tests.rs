@@ -594,7 +594,7 @@ fn a_verify_closer_than_a_failing_start_is_kept() {
         move |gains: Gains| {
             let (overshoot, bounce_back) = match verify {
                 _ if gains == START => start,
-                Some((verify, verified)) if gains == verified => verify,
+                Some((replied, verify_gains)) if gains == verify_gains => replied,
                 _ => (0.0, 0.0),
             };
             Some(metrics(overshoot, bounce_back))
@@ -629,6 +629,60 @@ fn a_verify_closer_than_a_failing_start_is_kept() {
     ];
     for (case, start, verify, kept, expected) in rows {
         let run = drive_from(plan, run_start, respond(start, Some((verify, verified))));
+        check!(finished(&run) == (kept, expected), "{case}");
+    }
+}
+
+/// An angle search judges its verify's distance from the criterion as the criterion reads it,
+/// from where steps end and how far past the step they end: a verify that overshoots less from
+/// the step but ends further past than a start that ended past the settle band isn't closer
+/// (#680).
+#[test]
+fn an_angle_verify_is_closer_only_if_it_ends_no_further_past() {
+    let run_start = Gains { d: 0.002, ..START };
+    let plan = SearchPlan {
+        criterion: Criterion::Overshoot {
+            max_overshoot: 0.05,
+            max_bounce_back: 0.05,
+            settled_past: Some(0.1),
+        },
+        ..d_plan()
+    };
+    // A step that rises to `final_value` and stays there, overshooting `overshoot` from the
+    // step.
+    let ending = |final_value: f32, overshoot: f32| StepMetrics {
+        peak: final_value,
+        final_value,
+        ..metrics(overshoot, 0.0)
+    };
+    let respond = |verify: Option<(StepMetrics, Gains)>| {
+        move |gains: Gains| {
+            Some(match verify {
+                _ if gains == START => ending(1.2, 0.2),
+                Some((replied, verify_gains)) if gains == verify_gains => replied,
+                _ => ending(1.0, 0.0),
+            })
+        }
+    };
+    let (verified, outcome) = finished(&drive_from(plan, run_start, respond(None)));
+    check!(outcome == Outcome::Tuned);
+    // (case, verify's steps, kept, outcome)
+    let rows = [
+        (
+            "ends past the band, less far than the start",
+            ending(1.15, 0.15),
+            verified,
+            Outcome::Tuned,
+        ),
+        (
+            "overshoots less from the step, ends further past",
+            ending(1.3, 0.0),
+            run_start,
+            Outcome::Kept(KeepReason::Worse),
+        ),
+    ];
+    for (case, verify, kept, expected) in rows {
+        let run = drive_from(plan, run_start, respond(Some((verify, verified))));
         check!(finished(&run) == (kept, expected), "{case}");
     }
 }
