@@ -278,7 +278,7 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
 };
 
 /// Step response of a copter yaw rate loop, searched: [`COPTER_RATE_STEP`] at half the size
-/// (0.5 rad/s). Prop drag gives a quad little yaw authority (about 7 rad/s² per unit moment on
+/// (0.5 rad/s), filtered at 10 Hz. Prop drag gives a quad little yaw authority (about 7 rad/s² per unit moment on
 /// the sim's `quad_x`), so 1 rad/s steps clip at any P that rises within PX4's yaw target,
 /// 0.2 s; the sim yaw search clipped 4–10× as long at 1 rad/s and settled on a lower P (#296).
 /// QuadCopterX has half `quad_x`'s yaw authority, and its steps reach only about half the step
@@ -287,12 +287,12 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
 /// steps overshoot at most 0.03 and settle within 0.56 s. Longer windows fail: at 1 s a start
 /// with I as high as P overshoots on the I alone, and the search falls to P 0.51 (#558).
 ///
-/// Filtered at 10 Hz, as ArduPilot filters a yaw twitch (`AUTOTUNE_Y_FILT_FREQ`,
-/// `AC_AutoTune_Multi::twitch_test_init`), against 40 Hz on roll and pitch. On a step half the
-/// size, gyro noise reads as overshoot and bounce-back at 40 Hz: under the sim's noise, only
-/// `racer` yaw P 0.50–0.55 met the step spec on all of 5 seeds, too narrow for the search to
-/// land in; at 10 Hz, 0.40–1.05 did (#604). The filter takes some peak from a fast yaw: the
-/// clean `racer`'s search picks P 1.18, whose steps overshoot 3.3% at 10 Hz and 7.4% at 40 Hz.
+/// The 10 Hz filter is ArduPilot's for a yaw twitch (`AUTOTUNE_Y_FILT_FREQ`,
+/// `AC_AutoTune_Multi::twitch_test_init`), against 40 Hz on roll and pitch. At 40 Hz, gyro
+/// noise on the smaller step reads as overshoot and bounce-back, leaving too narrow a band of
+/// yaw P meeting the step spec under noise for the search to land in (#604). The filter also
+/// takes some of a fast yaw's peak: the clean sim `racer`'s steps that read 3.3% overshoot
+/// here read 7.4% at 40 Hz.
 pub const COPTER_YAW_RATE_STEP: StepConfig = StepConfig {
     amplitude: 0.5,
     filter_hz: 10.0,
@@ -625,11 +625,9 @@ impl SearchPlan {
     /// result depends on the start: 0.35 against 0.91 on the sim's `racer` with a 0.40 yaw
     /// trim (#296).
     ///
-    /// A bracket point passes 3 pairs in a row, toward ArduPilot's 4 passing twitches
-    /// (`AUTOTUNE_SUCCESS_COUNT`): under gyro noise, a gain on the edge of the criterion can
-    /// pass 2 by luck. On 2, `racer`'s low start passed P 1.23 on seed 5, and the steps on
-    /// its result (P 1.11) overshot 5.5%; 3 lands every seed of 5 within the spec at 6 s more a run on average, 4
-    /// takes the slowest robustness row past its budget (#604).
+    /// A bracket point must pass 3 pairs in a row (`confirm`), toward ArduPilot's 4 passing
+    /// twitches (`AUTOTUNE_SUCCESS_COUNT`): under gyro noise, a gain on the edge of the
+    /// criterion can pass 2 by luck, and the result then overshoots past the spec (#604).
     ///
     /// # Examples
     ///
@@ -637,6 +635,7 @@ impl SearchPlan {
     /// use stable_flight::tuning::autotune::{COPTER_YAW_RATE_STEP, SearchPlan};
     ///
     /// assert_eq!(SearchPlan::copter_yaw_rate().test.step, COPTER_YAW_RATE_STEP);
+    /// assert_eq!(SearchPlan::copter_yaw_rate().confirm, 3);
     /// ```
     pub fn copter_yaw_rate() -> Self {
         Self {
