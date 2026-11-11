@@ -1304,7 +1304,8 @@ pub enum AutotuneEvent<T = TunedLoop, G = Gains> {
 /// What a finished stage did to its loop's gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// Set them from its measurements.
+    /// Set them from its measurements. A search's result meets its criterion, or, from a
+    /// start that failed it, flies closer to it than the start ([`SearchPlan`]).
     Tuned,
     /// Measured only; they didn't change.
     Measured,
@@ -1320,7 +1321,8 @@ pub enum Outcome {
 pub enum KeepReason {
     /// No gain down to the search's `min` passed.
     NoPass,
-    /// The result flew worse than the start ([`Acceptance`]), or its steps aborted or kept
+    /// The result flew worse than the start ([`Acceptance`]), missed the criterion without
+    /// flying closer to it than a start that also missed, or its steps aborted or kept
     /// clipping.
     Worse,
 }

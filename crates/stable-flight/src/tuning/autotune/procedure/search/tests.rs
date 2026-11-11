@@ -573,6 +573,66 @@ fn a_failing_baseline_judges_by_the_criterion() {
     }
 }
 
+/// A verify that misses the criterion is kept over a start that missed it too, if its steps
+/// overshoot and bounce back no more than the start's; else the fallback stays (#680). A
+/// start that met the criterion still holds the result to no worse
+/// (`a_worse_result_keeps_the_start`).
+#[test]
+fn a_verify_closer_than_a_failing_start_is_kept() {
+    let run_start = Gains { d: 0.002, ..START };
+    let plan = SearchPlan {
+        criterion: Criterion::Overshoot {
+            max_overshoot: 0.05,
+            max_bounce_back: 0.1,
+            settled_past: None,
+        },
+        ..d_plan()
+    };
+    // The start replies `start`, the verify gains `verify`'s metrics, every other candidate
+    // passes.
+    let respond = |start: (f32, f32), verify: Option<((f32, f32), Gains)>| {
+        move |gains: Gains| {
+            let (overshoot, bounce_back) = match verify {
+                _ if gains == START => start,
+                Some((verify, verified)) if gains == verified => verify,
+                _ => (0.0, 0.0),
+            };
+            Some(metrics(overshoot, bounce_back))
+        }
+    };
+    let failing = (0.15, 0.23);
+    let (verified, outcome) = finished(&drive_from(plan, run_start, respond(failing, None)));
+    check!(outcome == Outcome::Tuned);
+    // (case, start's overshoot and bounce-back, verify's, kept, outcome)
+    let rows = [
+        (
+            "closer: bounces back past the limit, less than the start",
+            failing,
+            (0.04, 0.114),
+            verified,
+            Outcome::Tuned,
+        ),
+        (
+            "bounces back more than the start",
+            failing,
+            (0.04, 0.3),
+            run_start,
+            Outcome::Kept(KeepReason::Worse),
+        ),
+        (
+            "overshoots more than the start",
+            failing,
+            (0.2, 0.114),
+            run_start,
+            Outcome::Kept(KeepReason::Worse),
+        ),
+    ];
+    for (case, start, verify, kept, expected) in rows {
+        let run = drive_from(plan, run_start, respond(start, Some((verify, verified))));
+        check!(finished(&run) == (kept, expected), "{case}");
+    }
+}
+
 /// An input the search didn't ask for fails it.
 #[test]
 fn a_mismatched_input_fails() {
