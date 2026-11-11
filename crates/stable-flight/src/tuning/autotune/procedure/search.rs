@@ -212,12 +212,20 @@ impl Search {
         self.advance()
     }
 
-    /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping) fly
-    /// no worse than a baseline that met the criterion, or, with no such baseline (the start's
-    /// steps weren't flown, aborted, clipped, or failed the criterion), meet the criterion
-    /// themselves; else the [`kept`](Self::kept) gains stay. A start that fails the criterion
-    /// isn't a standard to hold the result to: a too-high rate P settles fast because it
-    /// overshoots within the settle band (#361).
+    /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping):
+    /// - fly no worse than a baseline that met the criterion ([`Acceptance`]);
+    /// - with a baseline that failed it, meet the criterion, or else overshoot and bounce back
+    ///   no more than the baseline did;
+    /// - with no baseline (the start's steps weren't flown, aborted, or kept clipping), meet
+    ///   the criterion.
+    ///
+    /// Else the [`kept`](Self::kept) gains stay. A start that fails the criterion isn't a
+    /// standard to hold the result's settling to: a too-high rate P settles fast because it
+    /// overshoots within the settle band (#361). Nor is it a gain to go back to over a result
+    /// that flew closer to the criterion: under gyro noise, `racer`'s yaw kept a start
+    /// overshooting 15% over a verify that bounced back 11% against the 10% limit (#680).
+    ///
+    /// [`Acceptance`]: crate::tuning::autotune::Acceptance
     fn verified(&self, gain: f32, complete: bool, steps: StepSummary) -> Action {
         let SearchPlan {
             criterion,
@@ -225,11 +233,10 @@ impl Search {
             ..
         } = self.plan;
         let accepted = complete
-            // An empty baseline doesn't pass the criterion.
             && if criterion.passes(&self.baseline) {
                 acceptance.accepts(&criterion, &self.baseline, &steps)
             } else {
-                criterion.passes(&steps)
+                criterion.passes(&steps) || closer_than_baseline(&self.baseline, &steps)
             };
         if accepted {
             self.finish(self.with(gain), Outcome::Tuned, Some(steps))
@@ -293,4 +300,13 @@ impl Search {
             baseline: Some(self.baseline),
         }
     }
+}
+
+/// Whether `verify`'s mean overshoot and bounce-back are each no higher than `baseline`'s: a
+/// result closer to the criterion than a start that failed it. An empty baseline (no valid
+/// steps) isn't one to be closer than.
+fn closer_than_baseline(baseline: &StepSummary, verify: &StepSummary) -> bool {
+    let no_higher = |base: Option<f32>, value: Option<f32>| matches!((base, value), (Some(base), Some(value)) if value <= base);
+    no_higher(baseline.overshoot.mean(), verify.overshoot.mean())
+        && no_higher(baseline.bounce_back.mean(), verify.bounce_back.mean())
 }

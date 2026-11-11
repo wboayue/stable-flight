@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** a search whose start and verify both miss the criterion keeps the
+  verified gain when its steps overshoot and bounce back no more than the start's, instead of
+  the fallback (`Outcome::Tuned`): a start that misses is no gain to return to over one that
+  flies closer (#680).
 - **Breaking (behavior):** `COPTER_YAW_RATE_STEP` (and `COPTER_YAW_RATE_TEST_STEP`, built on
   it) is filtered at 10 Hz, as ArduPilot filters a yaw twitch (`AUTOTUNE_Y_FILT_FREQ`), and
   `SearchPlan::copter_yaw_rate` confirms a bracket point on 3 passing pairs. Under gyro noise
