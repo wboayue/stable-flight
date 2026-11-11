@@ -28,9 +28,9 @@ const MIN_SAG_I: f32 = 0.05;
 /// faster than a sag's raise, since the offset is a steady moment that only I supplies, and the
 /// fit from level flight sized I for none. Higher reaches it in fewer pairs; a sag's 1.5 left
 /// the X-Plane Alia 250, which rolls into its 20° banks against a 0.2 aileron moment, ending
-/// steps 1.09–1.22 past through all eight pairs as I climbed from 0.01 to 0.85. On the sim
-/// Alia at twice its yaw-rate roll moment, its match, 2 tunes from every start by the seventh
-/// pair; 2.5 and 3 fail it (#537).
+/// steps 1.09–1.22 past through all eight pairs as I climbed from 0.01 to 0.85 (#537). On the
+/// sim Alia, its yaw-rate roll moment fitted to X-Plane's held aileron, 2 tunes from every
+/// start by the seventh pair and 1.5 fails it (#458).
 const HOLD_PAST_I_FACTOR: f32 = 2.0;
 
 /// The most of its overshoot a step that holds past its target gives back, as a share: one

@@ -263,10 +263,10 @@ const STEPS: [StepConfig; 2] = [
     },
 ];
 
-/// The roll step's overshoot allowance: measured 11% (the spec's is 5%), 15% with margin. It
-/// runs through the model's lateral-directional terms, not yet measured: 16% with twice the
-/// rudder feedforward, 7% without it.
-// TODO(#458): the spec's 5% once yaw damping and sideslip are fitted to X-Plane.
+/// The roll step's overshoot allowance: measured 14.0% (the spec's is 5%). It runs most through
+/// the roll into a turn (`c_roll_r`, fitted to X-Plane's held aileron): 6.7% at 0.05, 18.5%
+/// at 0.3 (#458).
+// TODO(#458): cite X-Plane's own roll step overshoot on these gains.
 const ROLL_OVERSHOOT: f32 = 0.15;
 
 /// Roll and pitch steps meet PX4's step spec (`common::plane_spec`), rise against each axis's

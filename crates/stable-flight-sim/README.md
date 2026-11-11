@@ -195,14 +195,16 @@ gains, and a wing and pusher fitted to X-Plane's level flight, pulses, and full-
 ([#392](https://github.com/wboayue/stable-flight/issues/392); the fit table is in its rustdoc).
 Its pusher takes the model's thrust law for a power-set prop: linear in command, 21 N lost per
 m/s of airspeed. It trims as X-Plane flies within 1.1° of angle of attack, 0.11 of elevator,
-and 0.07 of pusher (41–48 m/s); its roll damping comes from steady rolls under held aileron.
+and 0.07 of pusher (41–48 m/s); its roll damping comes from steady rolls under held aileron,
+its yaw damping, weathercock, and sideslip force from rudder holds, and its roll into a turn
+from the aileron X-Plane holds in a steady bank ([#458](https://github.com/wboayue/stable-flight/issues/458)).
 Its plane side is tuned on this model ([#392](https://github.com/wboayue/stable-flight/issues/392)):
 pitch rate I and P against the wing's strong pitch stability, rate feedforward from the model,
 roll asking no more than its ailerons give, a 15° pitch-up limit below the stall, the
 transition gate at 40 m/s where the wing holds level, and total energy control with the
 model's full-thrust climb and least-thrust sink (1.8 and 3.5 m/s at 45 m/s).
-`stable-flight-sitl-xplane`'s `airframes::alia250()` flies the same plane side. Its
-lateral-directional terms are still borrowed ([#458](https://github.com/wboayue/stable-flight/issues/458)).
+`stable-flight-sitl-xplane`'s `airframes::alia250()` flies the same plane side. Its dihedral
+and the rudder's roll are still borrowed: the rudder holds' fits of them scatter.
 
 `tailsitter()` is ArduPilot SITL's tailsitter (`plane-tailsitter`: the default airplane with
 1.5× its thrust) on two motors 25 cm either side of the centerline and

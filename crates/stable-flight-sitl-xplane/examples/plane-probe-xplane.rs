@@ -17,8 +17,8 @@
 //! aileron measures the roll damping (#392). Then it holds the rudders at `--yaw-hold` open
 //! loop (the yaw loop's output replaced; the roll loop still flies the wings) for 4 s right,
 //! 8 s left, and 4 s right, ending near the leg's heading: the sideslip and yaw rate under a
-//! held rudder measure the weathercock, yaw damping, and dihedral (#458). Each leg runs the
-//! schedule once; `--no-pulses` skips the pulses, so the holds fit on the 3 km legs, and
+//! held rudder measure the weathercock, yaw damping, and sideslip force (#458). Each leg runs
+//! the schedule once; `--no-pulses` skips the pulses, so the holds fit on the 3 km legs, and
 //! `--no-roll-holds` the roll holds: the roll loop's I term winds up under a held aileron and
 //! saturates the ailerons the other way on release, swinging the bank past 50° (#458).
 //!

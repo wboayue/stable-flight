@@ -12,8 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plane-autotune-xplane` example (`just fly-xplane-plane-autotune`): plane autotune of the
   Alia 250's cruise side from an attitude hold 6 km offshore (`flights/alia_plane_tune.csv`),
   then home and a landing on the spawn (#537).
+- `plane-probe-xplane` holds the rudders open loop on each leg (`--yaw-hold`, 4 s right, 8 s
+  left, 4 s right) for the yaw damping and sideslip fit; `--no-pulses` and `--no-roll-holds`
+  skip the pulses and the roll holds (#458).
 
 ### Changed
+
+- **Breaking (behavior):** `airframes::alia250()`'s plane yaw rate feedforward is 0.999
+  (`PSTAB_YAW_FF`, was 3.57), the sim Alia's from its yaw damping and rudder power fitted to
+  X-Plane's rudder holds (#458).
+- `plane-autotune-xplane` lets the Alia's roll design clip for 0.3 s, as its roll step tests
+  may: holding its 15°/s roll rate limit takes more aileron than the design's 0.8 (#458).
 
 - **Breaking (behavior):** `airframes::alia250()`'s plane side answers altitude errors on a
   3 s total energy time constant (`PGUID_TCONST`, was 5 s) and flies pitch rate I 1
