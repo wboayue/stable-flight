@@ -12,7 +12,7 @@ body:
     id: context
     attributes:
       label: Context
-      description: Depends on / blocks (#n), related issues, `architecture.md` sections.
+      description: Depends on / blocks (#n), related issues, `architecture.md` or `docs/architecture/` sections.
   - type: textarea
     id: investigate
     attributes:

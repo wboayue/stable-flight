@@ -39,7 +39,8 @@ testing style, docs and changelog upkeep, and the pre-PR checklist. In short:
 The `test`, `lint`, and `embedded` checks must pass before a PR can merge. Most PRs are
 squash-merged, so the PR title becomes the commit subject: make it a short imperative summary.
 
-Architecture and design rationale live in [architecture.md](architecture.md).
+Architecture and design rationale live in [architecture.md](architecture.md), which links each
+subsystem's doc in [docs/architecture/](docs/architecture/).
 
 ## License
 
