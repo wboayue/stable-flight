@@ -38,10 +38,10 @@ pub struct LoopShapingConfig {
     pub rate_margin_deg: f32,
     /// Whether the rate design's D cancels the fitted motor lag ([`design_rate`]); else D is 0
     /// and P reaches the margin through the lag. Cancelling the lag lets the crossover go as
-    /// far as the delay and the gyro filters allow, about 50 rad/s on every sim copter. That
-    /// is 1.25–2.5 times 1/lag, past which the motors fall behind, on the small copters, but
-    /// 8.5 times on the Alia 250's 0.17 s lag: rate P 28.6 and D 4.9 against the step search's
-    /// 1.5 without D. Under gyro noise that D drives the motors to their limits (#572).
+    /// far as the delay and the gyro filters allow, about 50 rad/s on every sim copter. Past
+    /// 1/lag the motors fall behind; the crossover sits 1.25–2.5 times 1/lag on the small
+    /// copters but 8.5 times on the Alia 250's 0.17 s lag: rate P 28.6 and D 4.9, against the
+    /// step search's 1.5 without D. Under gyro noise that D drives the motors to their limits (#572).
     pub cancel_lag: bool,
     /// The angle loop's phase margin around the designed rate loop, in degrees, in `(0, 90)`.
     pub angle_margin_deg: f32,

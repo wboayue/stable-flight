@@ -1079,11 +1079,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     8.1 meet the large steps' spec. But the search after it, its P capped at 3, lowers P and
     keeps D, and the Alia never settles; and under gyro noise that D clips every loop and the
     run loses altitude. Without D, from rate P 1 and 3, the design gives P 1.65 and 2.75 and
-    the search ends at 1.49 and 2.48 (hand tune 1.52, 2.57) in 766 s, against 11–15 min for
-    the search alone. Rejected: the search's rate P range raised to 100 (P climbs to 69,
+    the search ends at 1.49 and 2.48 (hand tune 1.52, 2.57) in about 13 min of sim time,
+    against 11–15 for the search alone. Rejected: the search's rate P range raised to 100 (P climbs to 69,
     1212 s); the designed P capped at 3 with D scaled (pitch angle design fails, 2 misses);
-    D at a quarter or half of the lag's (5.8% overshoot; clipping); the design alone, without
-    the search (the noise above) (#572).
+    D at a quarter or half of the lag-cancelling D (5.8% overshoot; clipping); the design alone, without
+    the search (its D clips every loop under gyro noise) (#572).
   * *Search* (`SearchPlan::copter`, after every loop is designed): the step search from the
     design, P bracketed from it in either direction, D as designed. Designing everything first keeps a loop still on its start gains from ringing through
     another's steps: `racer`'s pitch on its high start with 25 ms of delay (±2.8 rad/s, #518).

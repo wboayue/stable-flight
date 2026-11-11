@@ -89,7 +89,7 @@ small-copter defaults don't carry over; measure first, then tune on a sim model 
   X-Plane's nose-up pitch at level thrust. The design search scaled to it
   (`StagePlan::large_copter_design_search`) designs rate P without D and reaches the same
   gains. With D cancelling the 0.17 s motor lag, the design is rate P near 30 with D near 5:
-  it meets the steps on the clean model, but the search after it keeps that D at its P cap
+  it meets the steps on the clean model. But the search after it keeps that D at its P cap
   of 3 and never settles, and gyro noise drives that D into the motor limits
   ([#572](https://github.com/wboayue/stable-flight/issues/572)).
 - **Confirm in X-Plane:** the same search there (`just fly-xplane-autotune --step-test`,

@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LARGE_COPTER_LOOP_SHAPING`, and `LoopShapingConfig::cancel_lag`: the design search for a
   full-size multirotor, designing rate P without D (P reaches the phase margin through the
   motor lag), then the large-copter search. On the sim's Alia 250 it tunes every loop to within
-  4% of the step search's rate P, where `copter_design_search` designs rate P 28.6 and never
-  settles. `cancel_lag` is `true` in `COPTER_LOOP_SHAPING`, as the design was (#572).
+  4% of the step search's rate P, where `copter_design_search` designs rate P 28.6 with D 4.9,
+  and its search, capped at P 3, keeps that D and never settles. `cancel_lag` is `true` in `COPTER_LOOP_SHAPING`, as the design was (#572).
 
 - `Maneuver::pause`: zero body rate at cruise thrust for a time, centered rate sticks on rates
   alone (#630).
