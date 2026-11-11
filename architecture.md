@@ -1131,6 +1131,20 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     between seeds and cost other rows a clip or rise target or the time budget; judging each
     direction on its own lowered P on the CG-offset rows until their rate steps missed the
     rise target.
+  * Yaw rate steps are filtered at 10 Hz, as ArduPilot filters a yaw twitch
+    (`AUTOTUNE_Y_FILT_FREQ`), and a yaw bracket point passes 3 pairs in a row, toward its
+    4 passing twitches (`AUTOTUNE_SUCCESS_COUNT`). At the roll and pitch filter, 40 Hz, gyro
+    noise on a 0.5 rad/s step reads as overshoot and bounce-back: only `racer` yaw P
+    0.50–0.55 met the spec on all 5 noise seeds, below which a step doesn't settle in its
+    window and above which it bounces back past 10%. The searches landed at 0.47–0.61, and on
+    seed 2 a verify that bounced back 11% kept the start (P 1.5, overshooting 15%). At 10 Hz,
+    0.40–1.05 meets the spec; on 2 pairs, seed 5 still passed P 1.23 and its result
+    overshot 5.5%. Rejected: 3 pairs at 40 Hz (P 0.41–0.44 on two seeds, unsettled); 10 Hz
+    with a 0.8 back-off (yaw steps then miss the rise target on 5 rows, 4 of them
+    `heavy_quad`'s); 4 pairs (`quad_x`'s seed 3 from the ×3 start takes 359 s, past the
+    budget); 20 Hz with 3 pairs, which passes too (the clean `racer`
+    at P 0.97, 3.7% overshoot at 40 Hz, against 7.4% for 10 Hz's P 1.18) but has no source.
+    The rows take 6 s longer on average, at most 32 s (#604).
   * Under a trim, a rate step overshoots more one way than the other until the rate I holds
     the whole trim: the angle loop holds the rest through its rate setpoint, which the step
     replaces. The I term takes over with a time constant of P/I, 5 s at `RATE_I_PER_P`.
@@ -1143,9 +1157,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     0.22 rad/s against a 0.05 rad/s trim share, so the transfer failed 37 of 49 robustness
     tests. Low-passed over 1 s, it lowered `quad_x`'s pitch rate P 18% and left `racer`'s
     steps overshooting the other way (3.5–4.1%).
-  * Open: `racer`'s low start under noise, passing on the seed its row flies, keeps its yaw
-    rate start as worse on seed 2 ([#604](https://github.com/wboayue/stable-flight/issues/604)).
-    The trim rows pass, with the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
+  * The trim rows pass, with the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
     abort is the safe outcome, and the row stays ignored.
   * `racer` flies its gyro low-pass at 75 Hz, Mission Planner's initial `INS_GYRO_FILTER`
