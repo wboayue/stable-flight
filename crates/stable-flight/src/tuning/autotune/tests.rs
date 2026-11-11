@@ -2443,6 +2443,24 @@ fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
     check!(*flight_loop.stabilizer().config() == start);
 }
 
+/// The large-copter design search designs roll and pitch rate, then angle, without rate D and
+/// keeping the start's rate I, then runs the large-copter search, and validates within its
+/// envelope (#572).
+#[test]
+fn large_copter_design_search_designs_then_runs_the_large_search() {
+    let plan = StagePlan::large_copter_design_search();
+    let search = StagePlan::large_copter_search();
+    for (stage, design) in plan[..4].iter().enumerate() {
+        check!(design.target == search[stage].target);
+        check!(design.method == Method::Design(DesignPlan::large_copter()));
+    }
+    check!(plan[4..] == search);
+    let design = DesignPlan::large_copter();
+    check!(!design.design.cancel_lag);
+    check!(design.rate_i_per_p == None);
+    check!(Autotune::new(&plan, Envelope::large_copter()).is_ok());
+}
+
 /// The large-copter search tunes roll and pitch rate, then angle, on the large steps, keeping
 /// the start's rate I, and validates within its envelope (#351); its step test flies the same
 /// steps; yaw rate and heading, which it doesn't tune, keep the copter plan.

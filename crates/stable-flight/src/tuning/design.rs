@@ -36,6 +36,13 @@ pub struct LoopShapingConfig {
     /// less overshoot. 65° met the step spec on every clean and delayed sim row; 60° and 55°
     /// missed on some (#312).
     pub rate_margin_deg: f32,
+    /// Whether the rate design's D cancels the fitted motor lag ([`design_rate`]); else D is 0
+    /// and P reaches the margin through the lag. Cancelling the lag lets the crossover go as
+    /// far as the delay and the gyro filters allow, about 50 rad/s on every sim copter. That
+    /// is 1.25–2.5 times 1/lag, past which the motors fall behind, on the small copters, but
+    /// 8.5 times on the Alia 250's 0.17 s lag: rate P 28.6 and D 4.9 against the step search's
+    /// 1.5 without D. Under gyro noise that D drives the motors to their limits (#572).
+    pub cancel_lag: bool,
     /// The angle loop's phase margin around the designed rate loop, in degrees, in `(0, 90)`.
     pub angle_margin_deg: f32,
     /// Least angle P, in rad/s of rate per rad of angle: the bottom of the angle search's range.
@@ -108,13 +115,14 @@ pub enum DesignError {
     NoWingDesign,
 }
 
-/// Rate gains for `model`: D cancels the motor lag, and P puts the crossover where the loop
-/// keeps `config`'s rate margin; I stays `start`'s, since it holds trim rather than shaping the
-/// response.
+/// Rate gains for `model`: D cancels the motor lag (with `config`'s
+/// [`cancel_lag`](LoopShapingConfig::cancel_lag); else D is 0), and P puts the crossover where
+/// the loop keeps `config`'s rate margin; I stays `start`'s, since it holds trim rather than
+/// shaping the response.
 ///
 /// D/P is the fitted lag `τ`, so the PD's zero `1 + τ·s` cancels the lag's pole. P is
 /// `1/|C·G·F|` at the first frequency where the phase of `C·G·F` falls to `−180° + margin`,
-/// with `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P, `G` the model's
+/// with `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P (`C = 1` without the lag cancelled), `G` the model's
 /// [`response`](RateModel::response), and `F` the `gyro` filters (the stabilizer's
 /// [`gyro_filters_on`](crate::stabilizers::copter::CopterStabilizerConfig::gyro_filters_on)
 /// the axis: its notch, if on, and its low-pass) that the loop's P and D both act through. Its lag at the crossover is most of the
@@ -160,10 +168,11 @@ pub fn design_rate(
         return Err(DesignError::NoCrossover);
     }
     let dt_s = model.dt_s;
+    let d_per_p = if config.cancel_lag { lag_s } else { 0.0 };
     let unit_pd = Gains {
         p: 1.0,
         i: 0.0,
-        d: lag_s,
+        d: d_per_p,
     };
     let open_loop = |w_radps: f32| {
         let z1 = unit_delay(w_radps, dt_s);
@@ -176,7 +185,7 @@ pub fn design_rate(
     Ok(Gains {
         p,
         i: start.i,
-        d: lag_s * p,
+        d: d_per_p * p,
     })
 }
 

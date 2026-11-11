@@ -83,6 +83,44 @@ fn rate_design_cancels_the_lag_and_keeps_the_margin() {
     }
 }
 
+/// Without the lag cancelled ([`LoopShapingConfig::cancel_lag`]), D is 0 and P keeps the margin
+/// through the lag, below the cancelling design's P and further below the slower the lag: (accel
+/// rad/s² per unit moment, lag s, delay ticks, most P as a share of the cancelling design's).
+/// The last row is the sim's Alia 250 roll axis (#572). The margin is read without the start's
+/// I, whose lag costs more at the lower crossover (1.8° on the first row).
+#[test]
+fn rate_design_without_d_keeps_the_margin_through_the_lag() {
+    let rows = [
+        (27.0, 0.03, 1, 0.3),
+        (125.0, 0.015, 1, 0.45),
+        (27.0, 0.03, 7, 0.6),
+        (1.74, 0.17, 1, 0.06),
+    ];
+    let without_d = LoopShapingConfig {
+        cancel_lag: false,
+        ..COPTER_LOOP_SHAPING
+    };
+    for (accel, lag_s, delay, most_share) in rows {
+        let row = format!("accel {accel}, lag {lag_s} s, delay {delay}");
+        let model = model(accel, lag_s, delay);
+        let filters = GyroFilters::low_pass(GYRO_HZ);
+        let gains = design_rate(&model, START, filters, &without_d).expect("a design");
+        let cancelled =
+            design_rate(&model, START, filters, &COPTER_LOOP_SHAPING).expect("a design");
+        check!(gains.d == 0.0, "{row}: {gains:?}");
+        check!(gains.i == START.i, "{row}");
+        check!(
+            gains.p < most_share * cancelled.p,
+            "{row}: {gains:?} vs {cancelled:?}"
+        );
+        let margin = rate_margin_deg(&model, Gains { i: 0.0, ..gains }, filters);
+        check!(
+            (margin - without_d.rate_margin_deg).abs() < 1.0,
+            "{row}: margin {margin}°"
+        );
+    }
+}
+
 /// The design spends part of the margin on the gyro low-pass the loop flies through: on a
 /// `quad_x`-like axis, a design that left the 40 Hz filter out flies it with under 5° of the
 /// 65° asked, near instability; with the filter, P comes out lower and the flown margin is the

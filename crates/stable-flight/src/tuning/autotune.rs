@@ -148,10 +148,9 @@ impl StagePlan<CopterSide> {
     /// by 10% and its pitch rate search tilts out of the envelope (#374). Fly it within
     /// [`Envelope::large_copter`].
     ///
-    /// The design search doesn't fit a full-size aircraft yet: on the sim's Alia it designs
-    /// rate P about 19× the step search's, and the search after it tilts out of the envelope
-    /// (#572). From rate P 1 and 3 this search tunes the Alia's sim model to within 25% of its
-    /// hand tune in 11–15 min of sim time (#572).
+    /// From rate P 1 and 3 this search tunes the Alia's sim model to within 25% of its hand
+    /// tune in 11–15 min of sim time (#572);
+    /// [`large_copter_design_search`](Self::large_copter_design_search) starts it from a design.
     ///
     /// # Examples
     ///
@@ -176,6 +175,46 @@ impl StagePlan<CopterSide> {
             target,
             method: Method::Search(SearchPlan::large_copter(target)),
         })
+    }
+
+    /// The design search for a full-size multirotor: [`DesignPlan::large_copter`] for roll
+    /// and pitch rate, then roll and pitch angle, then
+    /// [`large_copter_search`](Self::large_copter_search) from each loop's design. Fly it
+    /// within [`Envelope::large_copter`].
+    ///
+    /// [`copter_design_search`](Self::copter_design_search)'s rate design cancels the motor
+    /// lag with D, which on the Alia 250's 0.17 s lag designs rate P 28.6 and D 4.9; its
+    /// search, whose P tops out at 3, lowers P to 3 but keeps that D, and the Alia never
+    /// settles. Designed without D, from rate P 1 and 3, every stage tunes, to rate P within
+    /// 4% of the step search's, in about 13 min of sim time against its 11–15 (#572).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::{DesignPlan, Method, StagePlan};
+    ///
+    /// let plan = StagePlan::large_copter_design_search();
+    /// assert_eq!(plan[0].method, Method::Design(DesignPlan::large_copter()));
+    /// assert!(matches!(plan[4].method, Method::Search(_)));
+    /// assert_eq!(plan[4].target, TunedLoop::RollRate);
+    /// ```
+    pub fn large_copter_design_search() -> [Self; 8] {
+        let [roll_rate, pitch_rate, roll, pitch] = Self::large_copter_search();
+        let design = |target| Self {
+            target,
+            method: Method::Design(DesignPlan::large_copter()),
+        };
+        [
+            design(TunedLoop::RollRate),
+            design(TunedLoop::PitchRate),
+            design(TunedLoop::Roll),
+            design(TunedLoop::Pitch),
+            roll_rate,
+            pitch_rate,
+            roll,
+            pitch,
+        ]
     }
 }
 
@@ -261,10 +300,20 @@ const COPTER_ANGLE_P_MAX: f32 = 10.0;
 /// does (#312, #517).
 pub const COPTER_LOOP_SHAPING: LoopShapingConfig = LoopShapingConfig {
     rate_margin_deg: 65.0,
+    cancel_lag: true,
     angle_margin_deg: 65.0,
     angle_p_min: COPTER_ANGLE_P_MIN,
     angle_p_max: COPTER_ANGLE_P_MAX,
     angle_back_off: SEARCH_BACK_OFF,
+};
+
+/// Loop shaping of a full-size multirotor's roll and pitch: [`COPTER_LOOP_SHAPING`] without
+/// rate D ([`LoopShapingConfig::cancel_lag`]), so the rate P reaches the margin through the
+/// motor lag. On the sim's Alia 250 (lag 0.17 s) it designs rate P 1.65 and 2.75 against the
+/// step search's 1.50 and 2.41–2.53, where cancelling the lag designs 28.6 and 47.7 (#572).
+pub const LARGE_COPTER_LOOP_SHAPING: LoopShapingConfig = LoopShapingConfig {
+    cancel_lag: false,
+    ..COPTER_LOOP_SHAPING
 };
 
 /// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of the
@@ -964,6 +1013,24 @@ impl DesignPlan {
             identify: COPTER_IDENTIFY,
             design: COPTER_LOOP_SHAPING,
             rate_i_per_p: Some(RATE_I_PER_P),
+        }
+    }
+
+    /// A full-size multirotor's: [`COPTER_IDENTIFY`], [`LARGE_COPTER_LOOP_SHAPING`], and the
+    /// start's rate I kept, as [`StagePlan::large_copter_search`] keeps it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::DesignPlan;
+    ///
+    /// assert!(!DesignPlan::large_copter().design.cancel_lag);
+    /// ```
+    pub fn large_copter() -> Self {
+        Self {
+            design: LARGE_COPTER_LOOP_SHAPING,
+            rate_i_per_p: None,
+            ..Self::copter()
         }
     }
 

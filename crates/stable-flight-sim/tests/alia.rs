@@ -1,5 +1,6 @@
 //! The Alia 250's hover ([`airframes::alia250_hover`]), a full-size multirotor: its autotune converges on
-//! core's large-copter search (`StagePlan::large_copter_search`), every loop meets the autotune's overshoot and
+//! core's large-copter search (`StagePlan::large_copter_search`) and design search
+//! (`StagePlan::large_copter_design_search`), every loop meets the autotune's overshoot and
 //! bounce-back bands on that plan's steps, its large rate step tests settle on its X-Plane angle I, and it
 //! holds a hover through a gust.
 
@@ -14,7 +15,7 @@ use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Gust, Wind};
 
 use common::spec::{self, ALL, TUNED};
-use common::{AUTOTUNE_TIMEOUT_S, HOVER_ALTITUDE_M, HOVER_SETTLE_S, Plant, large};
+use common::{AUTOTUNE_TIMEOUT_S, AutotuneRun, HOVER_ALTITUDE_M, HOVER_SETTLE_S, Plant, large};
 
 /// How far apart, as a fraction of the larger, a converged gain may be from the airframe's
 /// (as `autotune.rs`).
@@ -38,15 +39,39 @@ fn tuned_p(config: &CopterStabilizerConfig) -> [f32; 4] {
 /// the envelope's 35° before the search ends.
 #[test]
 fn autotune_converges_on_the_large_copter_search() {
+    converges_on(&StagePlan::large_copter_search(), AutotuneRun::all_tuned);
+}
+
+/// From rate P 1 and 3 with angle P 1, the large-copter design search designs every loop, then
+/// tunes or keeps each, to the airframe's gains: designed without rate D, each rate search
+/// starts about 10% above where it ends (#572).
+#[test]
+fn autotune_converges_on_the_large_copter_design_search() {
+    converges_on(&StagePlan::large_copter_design_search(), |run| {
+        let outcomes = run.outcomes();
+        outcomes.len() == 8
+            && outcomes.iter().enumerate().all(|(stage, (_, outcome))| {
+                if stage < 4 {
+                    *outcome == Ok(Outcome::Designed)
+                } else {
+                    matches!(outcome, Ok(Outcome::Tuned | Outcome::Kept(_)))
+                }
+            })
+    });
+}
+
+/// Runs `plan` from rate P 1 and 3 with angle P 1 and checks that its outcomes are `complete`
+/// and every tuned P is within [`AGREEMENT`] of the airframe's.
+fn converges_on(plan: &[StagePlan], complete: impl Fn(&AutotuneRun) -> bool) {
     let reference = tuned_p(&airframes::alia250_hover().stabilizer);
     for rate_p in [1.0, 3.0] {
         let run = common::autotune_within(
             &Plant::clean(started_from(rate_p, 1.0)),
-            &StagePlan::large_copter_search(),
+            plan,
             Envelope::large_copter(),
             4.0 * AUTOTUNE_TIMEOUT_S,
         );
-        check!(run.all_tuned(), "rate P {rate_p}: {:?}", run.stages);
+        check!(complete(&run), "rate P {rate_p}: {:?}", run.stages);
         let tuned = tuned_p(&run.config);
         for (index, target) in TUNED.iter().enumerate() {
             let (a, b) = (tuned[index], reference[index]);
