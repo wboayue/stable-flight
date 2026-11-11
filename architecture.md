@@ -1132,18 +1132,18 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     direction on its own lowered P on the CG-offset rows until their rate steps missed the
     rise target.
   * Yaw rate steps are filtered at 10 Hz, as ArduPilot filters a yaw twitch
-    (`AUTOTUNE_Y_FILT_FREQ`), and a yaw bracket point passes 3 pairs in a row, toward its
-    4 passing twitches (`AUTOTUNE_SUCCESS_COUNT`). At the roll and pitch filter, 40 Hz, gyro
+    (`AUTOTUNE_Y_FILT_FREQ`), and each yaw bracket point must pass 3 pairs in a row
+    (`confirm`; not more verify pairs), toward ArduPilot's 4 (`AUTOTUNE_SUCCESS_COUNT`). At the roll and pitch filter, 40 Hz, gyro
     noise on a 0.5 rad/s step reads as overshoot and bounce-back: only `racer` yaw P
     0.50–0.55 met the spec on all 5 noise seeds, below which a step doesn't settle in its
     window and above which it bounces back past 10%. The searches landed at 0.47–0.61, and on
     seed 2 a verify that bounced back 11% kept the start (P 1.5, overshooting 15%). At 10 Hz,
-    0.40–1.05 meets the spec; on 2 pairs, seed 5 still passed P 1.23 and its result
-    overshot 5.5%. Rejected: 3 pairs at 40 Hz (P 0.41–0.44 on two seeds, unsettled); 10 Hz
+    0.40–1.05 meets the spec; on 2 passing pairs, seed 5 still passed P 1.23 and its result
+    (P 1.11) overshot 5.5%; on 3, every seed lands within the spec. Rejected: 3 pairs at 40 Hz (P 0.41–0.44 on two seeds, unsettled); 10 Hz
     with a 0.8 back-off (yaw steps then miss the rise target on 5 rows, 4 of them
     `heavy_quad`'s); 4 pairs (`quad_x`'s seed 3 from the ×3 start takes 359 s, past the
-    budget); 20 Hz with 3 pairs, which passes too (the clean `racer`
-    at P 0.97, 3.7% overshoot at 40 Hz, against 7.4% for 10 Hz's P 1.18) but has no source.
+    budget); 20 Hz with 3 pairs, which passes too (the clean `racer` at P 0.97, 3.7%
+    overshoot at 40 Hz, against 7.4% for 10 Hz's P 1.18) but has no source.
     The rows take 6 s longer on average, at most 32 s (#604).
   * Under a trim, a rate step overshoots more one way than the other until the rate I holds
     the whole trim: the angle loop holds the rest through its rate setpoint, which the step

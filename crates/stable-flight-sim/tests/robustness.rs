@@ -133,20 +133,12 @@ rows! {
 /// rows fly seed 1).
 #[test]
 fn noise_rows_pass_on_other_seeds() {
-    for (name, airframe, starts) in [
-        (
-            "quad_x",
-            airframes::quad_x(),
-            &[Start::Low, Start::High][..],
-        ),
-        (
-            "heavy_quad",
-            airframes::heavy_quad(),
-            &[Start::Low, Start::High],
-        ),
-        ("racer", airframes::racer(), &[Start::Low, Start::High]),
+    for (name, airframe) in [
+        ("quad_x", airframes::quad_x()),
+        ("heavy_quad", airframes::heavy_quad()),
+        ("racer", airframes::racer()),
     ] {
-        for &start in starts {
+        for start in [Start::Low, Start::High] {
             for seed in 2..=5 {
                 check_noise_seed(name, airframe, seed, start);
             }
