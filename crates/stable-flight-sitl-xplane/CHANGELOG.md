@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking (behavior):** `airframes::alia250()`'s plane yaw rate feedforward is 0.999
   (`PSTAB_YAW_FF`, was 3.57), the sim Alia's from its yaw damping and rudder power fitted to
-  X-Plane's rudder holds (#458).
+  X-Plane's rudder holds (#458). On `flights/alia_transition_lap.csv` it holds a third of the
+  rudder in plane flight (mean 0.030 against 0.097) and flies the lap as before: peak sink
+  3.31 m/s against 3.33, handoff dip 4.1 m against 4.0, roll RMS 1.72° against 1.71°.
 - `plane-autotune-xplane` lets the Alia's roll design clip for 0.3 s, as its roll step tests
   may: holding its 15°/s roll rate limit takes more aileron than the design's 0.8 (#458).
 
