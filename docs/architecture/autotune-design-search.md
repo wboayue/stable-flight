@@ -275,24 +275,25 @@ each loop from its design, so the search starts near its answer.
 
 ### Rejected
 
-* Rejected, from the same sweep
-  ([`autotune_methods`](../../crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
-  placement (`pid_design::computePidGmvc`) assumes one tick of delay and found no design on any
-  10 or 25 ms row; a gain search on the model passes gains the model can't predict (4 misses,
-  or none found); ArduPilot's QuikTune ramp (`VTOL-quicktune.lua`) needs excitation the
-  clean sim lacks, then missed the spec on some rows at every slew threshold from 5 to 80
-  (too soft at 5, rate P 0.1–0.3; too stiff at 80, `quad_x` P 5.6), couldn't lower a ×3
-  start more than its 20%, and took 26–239 s for the rate loops alone. Also rejected (#518):
-  the design kept after a check of two step pairs on it (the loop shaping alone; 77–109 s on
-  the sim, unreliable in RealFlight as above); refitting until two designs agree within 25%
-  (in RealFlight it settled on a pair of bad fits, roll rate P 0.39); verifying each loop
-  right after its design (3 of the 6 rows with 25 ms of delay failed to settle); searching
-  the rate loops before designing the angle loops on them (6 of 18 rows failed:
-  `AngleUnstable`, `NotSettled`); verifying the angle designs instead of searching them
-  (angle P stayed at 9, and `quad_x`'s angle steps clipped with 10 ms of delay).
-* Rejected: relay feedback (Åström–Hägglund) and its tuning rules, which seeded the search
-  from the start gains with D and a P cap (`0.6·Ku`). On QuadCopterX it couldn't measure yaw
-  rate within the yaw authority left at hover, and on the angle loops it read an ultimate
-  gain near 60 (an integrator around a fast rate loop) whose rule P oscillated once the rate
-  setpoint saturated (#295); its D held the rate search's P below what `heavy_quad` and
-  `racer` support (#378).
+* PX4's pole placement (`pid_design::computePidGmvc`): it assumes one tick of delay and found
+  no design on any 10 or 25 ms row (#519).
+* A gain search on the model: the model doesn't predict overshoot at high gain, so the search
+  passed gains that missed (#519).
+* ArduPilot's QuikTune ramp (`VTOL-quicktune.lua`): it needs excitation the clean sim lacks,
+  missed the spec on some rows at every slew threshold, can't lower a ×3 start more than its
+  20%, and was slower on the rate loops alone (#519).
+* The design kept after two step pairs on it, without a search: unreliable in RealFlight,
+  where the fits scatter (**Results**; #522).
+* Refitting until two designs agree within 25%: in RealFlight it settled on a pair of bad fits
+  (#522).
+* Verifying each loop right after its design: 3 of the 6 rows with 25 ms of delay failed to
+  settle (#518).
+* Searching the rate loops before designing the angle loops on them: a third of the rows failed
+  (`AngleUnstable`, `NotSettled`) (#522).
+* Verifying the angle designs instead of searching them: angle P stayed at 9, and `quad_x`'s
+  angle steps clipped with 10 ms of delay (#522).
+* Relay feedback (Åström–Hägglund) and its tuning rules, which seeded the search from the start
+  gains with D and a P cap (`0.6·Ku`): on QuadCopterX it couldn't measure yaw rate within the
+  yaw authority left at hover, its angle-loop rule P oscillated once the rate setpoint
+  saturated (#295), and its D held the rate search's P below what `heavy_quad` and `racer`
+  support (#378).
