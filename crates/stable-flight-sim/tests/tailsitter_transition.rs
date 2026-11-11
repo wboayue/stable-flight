@@ -635,9 +635,10 @@ fn ends_a_forward_transition_early() {
     let mut tilted = airframe;
     // Short of the 45° that completes it: only the timeout ends it.
     tilted.guidance.transition.forward_max_tilt_rad = 40f32.to_radians();
-    // A flying wing banks little in a gust along the span: 8 m/s as the ramp begins rolls the
-    // hover view 10.2° on the hand tune and 2.4° on the copter design search's gains, so the
-    // limit drops to 1° for it to trip on either (#593).
+    // A flying wing banks little in a gust along the span: with no limit, 8 m/s as the ramp
+    // begins peaks the hover view's roll over the ramp at 10.2° on the hand tune and 2.4° on
+    // the copter design search's gains, so the limit drops to 1° for it to trip on either
+    // (#593).
     let mut low_roll_limit = airframe;
     low_roll_limit.guidance.transition.roll_limit_rad = 1f32.to_radians();
     let span_gust = Wind {
