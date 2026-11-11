@@ -1552,7 +1552,7 @@ impl From<&RateCommand> for RateSetpoint {
 /// heading-hold target. The [`Stabilizer`] then tracks the setpoint. [`FlightLoop`] calls both
 /// every tick; a guidance that runs its loops slower paces them itself from `dt`. Why they are
 /// split is in the
-/// [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#core-components).
+/// [architecture](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/flight-loop.md#core-components).
 ///
 /// # Examples
 ///
@@ -1810,7 +1810,7 @@ pub trait Configurable {
     /// error. Call it between ticks: the new config applies from the next tick, and runtime
     /// state (integrals, derivative history, timers) is kept. A changed integral gain rescales
     /// its integral so the I term carries over without a bump; across a zero gain the
-    /// integral resets (`architecture.md#config-ownership`).
+    /// integral resets (`docs/architecture/config.md#config-ownership`).
     fn set_config(&mut self, config: Self::Config) -> Result<(), controllers::InvalidConfig>;
 }
 

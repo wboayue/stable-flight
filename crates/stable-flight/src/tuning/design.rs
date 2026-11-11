@@ -4,7 +4,7 @@
 //! Both read the model's frequency response and set a gain for a target
 //! [phase margin](https://github.com/wboayue/stable-flight/blob/main/docs/glossary.md): how far the loop is from oscillating where its
 //! open-loop gain crosses 1. The rule and its alternatives (PX4's pole placement, a step search
-//! on the model) are in `architecture.md#autotune`; the comparison behind them is the
+//! on the model) are in `docs/architecture/autotune-design-search.md#design`; the comparison behind them is the
 //! `autotune_methods` sweep in `stable-flight-sim` (#312).
 
 use core::f32::consts::PI;

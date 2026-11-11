@@ -206,7 +206,7 @@ tilt of `atan(|a| / g)` toward it, relative to the heading, capped at its `max_t
 **Key Features**:
 - Airframe-independent: tilt conversion and limits belong to the guidance
 - Velocity I trims a steady wind; the caller passes the acceleration it last capped
-  ([integrator policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#config-ownership))
+  ([integrator policy](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/config.md#config-ownership))
 
 **Usage**:
 ```rust

@@ -10,7 +10,7 @@ Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Pipeline
 
-`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateSource` + `Actuator` = `Vehicle`, `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (`RealTimeRunner` in `stable-flight-sitl` today).
+`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateSource` + `Actuator` = `Vehicle`, `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [`docs/architecture/flight-loop.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/flight-loop.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (`RealTimeRunner` in `stable-flight-sitl` today).
 
 ```rust
 let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
@@ -31,7 +31,7 @@ let mut commander = WaypointFollower::new(PATH)?
     .with_route_end(RouteEnd::Hold);
 ```
 
-`commanders::FailsafeCommander` flies a link-fed primary (a `LinkedCommander`, which reports how long ago it last heard the link) and switches to a `Fallback` when the link goes stale, such as `HoldCommander`, which holds the position where it took over, or finishes a land the link dropped. It starts in the fallback and returns only after the link has been back for a while; a disarm is always honored, the fallback never arms, an arm requested during the fallback is dropped at the handover, sticks take back an armed vehicle only once they move, and a land disarms on touchdown, whichever commander flies it. Rules: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link-failsafe).
+`commanders::FailsafeCommander` flies a link-fed primary (a `LinkedCommander`, which reports how long ago it last heard the link) and switches to a `Fallback` when the link goes stale, such as `HoldCommander`, which holds the position where it took over, or finishes a land the link dropped. It starts in the fallback and returns only after the link has been back for a while; a disarm is always honored, the fallback never arms, an arm requested during the fallback is dropped at the handover, sticks take back an armed vehicle only once they move, and a land disarms on touchdown, whichever commander flies it. Rules: [`docs/architecture/link.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/link.md#link-failsafe).
 
 ```rust
 let mut commander = FailsafeCommander::new(link_commander, HoldCommander::default(), FailsafeConfig::default())?;
@@ -72,7 +72,7 @@ Guidance is the outer loop: it turns the commander's `ControlInput` into a `Setp
 let guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 ```
 
-`PlaneGuidance` flies a fixed wing: stabilized sticks (bank and pitch, coordinated turns) or acro rates, offboard attitudes and rates, and waypoints (L1 lines through each, a loiter at the last). `TailsitterGuidance` hovers on `CopterGuidance` in `View::tailsitter`, flies plane on `PlaneGuidance`, and moves between them under `guidance::vtol::Transition` when the commander requests the other regime; `QuadPlaneGuidance` flies a lift+cruise VTOL (quadplane) the same way under `guidance::vtol::LiftTransition`, which trades lift between its lift rotors and its wing, both flown at once through a transition (`Setpoint::Blend`) ([flight regimes](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-regimes)).
+`PlaneGuidance` flies a fixed wing: stabilized sticks (bank and pitch, coordinated turns) or acro rates, offboard attitudes and rates, and waypoints (L1 lines through each, a loiter at the last). `TailsitterGuidance` hovers on `CopterGuidance` in `View::tailsitter`, flies plane on `PlaneGuidance`, and moves between them under `guidance::vtol::Transition` when the commander requests the other regime; `QuadPlaneGuidance` flies a lift+cruise VTOL (quadplane) the same way under `guidance::vtol::LiftTransition`, which trades lift between its lift rotors and its wing, both flown at once through a transition (`Setpoint::Blend`) ([flight regimes](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/flight-regimes.md#flight-regimes)).
 
 ### Stabilizer
 

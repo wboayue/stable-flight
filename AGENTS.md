@@ -106,13 +106,13 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - `TelemetryPublisher` gets a `TelemetryRecord` after `actuate`: the tick's `dt`, command,
   setpoint, state, control, actuators, merged `Saturation`, failsafe state, and flight mode.
 - Tick order, `prime` (call once before the first `step`), and the arm gate:
-  `architecture.md#flight-stabilization-loop`. Timing: `architecture.md#real-time-loop-management`.
+  `docs/architecture/flight-loop.md#flight-stabilization-loop`. Timing: `docs/architecture/flight-loop.md#real-time-loop-management`.
 - Components own one config each and implement `Configurable` (validated `set_config`), reached
   between ticks through `FlightLoop::set_guidance_config`/`set_stabilizer_config`
-  (`architecture.md#config-ownership`). `CopterStabilizer` and `PlaneStabilizer` host
+  (`docs/architecture/config.md#config-ownership`). `CopterStabilizer` and `PlaneStabilizer` host
   autotune probes (`tuning::Tunable`; a VTOL stabilizer hosts both sides'), which `FlightLoop`
   forwards; `tuning::autotune::Autotune` (copter) and `PlaneAutotune` run them
-  (`architecture.md#autotune`).
+  (`docs/architecture/autotune.md#autotune`).
 - Trait methods don't return `Result`: invalid configuration panics at construction, and
   per-tick failures aren't modeled. A new fallible operation gets a `thiserror` type.
 

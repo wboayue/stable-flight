@@ -12,7 +12,7 @@
 //!   procedure (which probes to run, what gains follow), guards the envelope, and commits or
 //!   reverts gains.
 //!
-//! Method and rules: `architecture.md#autotune`.
+//! Method and rules: `docs/architecture/autotune.md#autotune`.
 //!
 //! # Examples
 //!

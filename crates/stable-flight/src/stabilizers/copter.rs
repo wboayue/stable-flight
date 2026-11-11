@@ -75,7 +75,7 @@
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
 //!   ([`ProbeStatus::Interrupted`](crate::tuning::ProbeStatus::Interrupted)), the loop
 //!   restarts with no derivative history and keeps its I term, which a retune with the tuned
-//!   gains rescales like any other (`architecture.md#config-ownership`). On an interrupt the
+//!   gains rescales like any other (`docs/architecture/config.md#config-ownership`). On an interrupt the
 //!   rate tick then clears the idle angle loops, so their I terms are dropped. An angle
 //!   stage's identification runs on the rate loop under it, so a rate tick doesn't interrupt
 //!   it.

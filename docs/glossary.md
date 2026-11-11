@@ -53,7 +53,7 @@ Code comments and docs link here instead of redefining a term.
   [#657](https://github.com/wboayue/stable-flight/issues/657)).
 - **Offboard:** setpoints sent by a companion computer or ground station rather than sticks.
 - **Failsafe:** what the vehicle flies on its own when the link goes quiet: a fallback
-  commander takes over ([architecture](../architecture.md#link-failsafe)).
+  commander takes over ([architecture](architecture/link.md#link-failsafe)).
 
 **Frames and signs**
 
@@ -156,7 +156,7 @@ Code comments and docs link here instead of redefining a term.
 - **Doublet:** a rate step one way, then the same step the other way, then a pause: measures
   a step response and ends near the starting attitude (`Maneuver::doublet`).
 - **Autotune:** flies step probes on each loop and picks gains from the measured response
-  ([architecture](../architecture.md#autotune)).
+  ([architecture](architecture/autotune.md#autotune)).
 - **Envelope (autotune):** the limits a stage must stay inside: tilt, rate, and sink for a
   copter; bank, pitch, rate, sink, and an airspeed band for a plane (the **forward-flight
   envelope**, `PlaneEnvelope`). Leaving it fails the stage and puts the last kept gains back.
@@ -171,7 +171,7 @@ Code comments and docs link here instead of redefining a term.
   body rate to its moment command, with a lag and a delay) from flight data recorded while a
   known signal shakes it: here a square wave added to the rate setpoint, as PX4 does. The
   autotune's design search designs gains from the model instead of flying a step per
-  candidate gain ([architecture](../architecture.md#autotune)). On a noisy window the fit
+  candidate gain ([architecture](architecture/autotune-design-search.md)). On a noisy window the fit
   runs both sides through a leaky integrator, so the gyro noise in the measured rate stays
   out of the moments it's fitted to, which the controller made from earlier noise.
 - **Phase margin:** how far a loop is from oscillating, as the phase short of −180° where its

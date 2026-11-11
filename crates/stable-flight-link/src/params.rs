@@ -1,6 +1,6 @@
 //! Serving the flight controller's [`Params`] over the link: see [`ParamServer`]. Why queues
 //! and a between-ticks poll: the
-//! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#params).
+//! [architecture](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/config.md#params).
 
 use heapless::spsc::{Consumer, Producer};
 use stable_flight::params::Params;

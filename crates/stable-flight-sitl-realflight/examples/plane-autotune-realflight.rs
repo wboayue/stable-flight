@@ -2,7 +2,7 @@
 //! hover climb, a transition onto a climbing leg, and a level leg back past the start at
 //! 100 m), hands over to the attitude hold a plane autotune flies in (`PlaneTuneHold`, at the
 //! thrust the level leg flew on) once the last leg flies straight and level for 3 s, tunes roll, then pitch, by the plane design
-//! (`StagePlan::plane_design`, `architecture.md#autotune`), and flies home in plane, transitions
+//! (`StagePlan::plane_design`, `docs/architecture/autotune-plane.md`), and flies home in plane, transitions
 //! back, hovers over the start, and lands there (`stable_flight_sitl::autotune::PlaneTuneFlight`). Each axis is
 //! fitted from a square wave on its rate loop (the fit logged: stiffness, damping, control,
 //! lag, delay), its gains designed on the fit, and the design checked on attitude step pairs

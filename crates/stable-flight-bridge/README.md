@@ -6,7 +6,7 @@
 [![Documentation](https://docs.rs/stable-flight-bridge/badge.svg)](https://docs.rs/stable-flight-bridge)
 [![Coverage Status](https://coveralls.io/repos/github/wboayue/stable-flight/badge.svg?branch=main)](https://coveralls.io/github/wboayue/stable-flight?branch=main)
 
-Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller. It speaks the flight controller's native link ([`stable-flight-link`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-link)) on one side and MAVLink v2 on the other, presenting the flight controller to a ground station such as QGroundControl as MAVLink system 1, component 1. It translates and never decides: arming, failsafe, and param validation stay on the flight controller. Design: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
+Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller. It speaks the flight controller's native link ([`stable-flight-link`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-link)) on one side and MAVLink v2 on the other, presenting the flight controller to a ground station such as QGroundControl as MAVLink system 1, component 1. It translates and never decides: arming, failsafe, and param validation stay on the flight controller. Design: [`docs/architecture/link.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/link.md#link).
 
 ## Status
 

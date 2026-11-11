@@ -10,7 +10,7 @@
 //! laptop running the bridge): the [`Uplink`] / [`Downlink`] messages, the frame codec
 //! ([`Message`]), and the byte-level [`Link`] trait that transports implement. `no_std` and
 //! allocation-free. Frame format and design rationale: the
-//! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
+//! [architecture](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/link.md#link).
 //!
 //! # Examples
 //!

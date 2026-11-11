@@ -8,7 +8,7 @@ description: Tune an airframe's loops with autotune in RealFlight or X-Plane and
 Getting from an airframe's hand tune to committed autotuned gains. How each flight is flown
 and screened is [flight-check](../flight-check/SKILL.md); confirm the loaded model before every
 run, and fly only on the go. The plane design and copter searches are in
-[architecture.md](../../../architecture.md#autotune); past runs: #535 (eXplora), #536 (Titan
+[`docs/architecture/autotune.md`](../../../docs/architecture/autotune.md#autotune); past runs: #535 (eXplora), #536 (Titan
 Cobra), #537 (X-Plane Alia), #540 (Alia hover).
 
 ## Wiring
