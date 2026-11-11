@@ -6,7 +6,7 @@
 [![Documentation](https://docs.rs/stable-flight-sitl-xplane/badge.svg)](https://docs.rs/stable-flight-sitl-xplane)
 [![Coverage Status](https://coveralls.io/repos/github/wboayue/stable-flight/badge.svg?branch=main)](https://coveralls.io/github/wboayue/stable-flight?branch=main)
 
-[X-Plane 12](https://www.x-plane.com) simulator backend for the [Stable Flight](https://github.com/wboayue/stable-flight) flight controller. It provides `XPlaneVehicle`, a `Vehicle` (`StateSource` + `Actuator`) that talks to X-Plane over its UDP dataref protocol through [xplane-bridge](https://crates.io/crates/xplane-bridge), with no plugin. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#x-plane) for why it looks the way it does.
+[X-Plane 12](https://www.x-plane.com) simulator backend for the [Stable Flight](https://github.com/wboayue/stable-flight) flight controller. It provides `XPlaneVehicle`, a `Vehicle` (`StateSource` + `Actuator`) that talks to X-Plane over its UDP dataref protocol through [xplane-bridge](https://crates.io/crates/xplane-bridge), with no plugin. See [`docs/architecture/simulators.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/simulators.md#x-plane) for why it looks the way it does.
 
 The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core and never on the sitl harness, so any runner can drive it; the examples pair it with [`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl).
 

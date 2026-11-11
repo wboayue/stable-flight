@@ -1,6 +1,6 @@
 //! Autotunes the Alia 250's hover in X-Plane: climbs to the hover script's waypoint, tunes
 //! roll and pitch rate, then roll and pitch angle, by the large-copter step search, lands, and
-//! disarms (`StagePlan::large_copter_search`, `architecture.md#autotune`). Each loop's P is
+//! disarms (`StagePlan::large_copter_search`, `docs/architecture/autotune.md#autotune`). Each loop's P is
 //! searched by pairs of slow steps from its start gains, verified, and kept only if no worse
 //! than the start (each judgment logged with its steps). On completion it logs baseline vs
 //! verify per loop and prints the tuned config as an `airframes.rs` snippet. A failed stage

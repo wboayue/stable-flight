@@ -6,7 +6,7 @@
 [![Documentation](https://docs.rs/stable-flight-link/badge.svg)](https://docs.rs/stable-flight-link)
 [![Coverage Status](https://coveralls.io/repos/github/wboayue/stable-flight/badge.svg?branch=main)](https://coveralls.io/github/wboayue/stable-flight?branch=main)
 
-Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller and a companion computer (or a laptop running the bridge). It provides the message types, the frame codec, and the byte-level `Link` trait (`LinkRx` + `LinkTx`) that transports implement. It is `no_std` and allocation-free, so the flight controller and the host share one implementation. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link) for design rationale.
+Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller and a companion computer (or a laptop running the bridge). It provides the message types, the frame codec, and the byte-level `Link` trait (`LinkRx` + `LinkTx`) that transports implement. It is `no_std` and allocation-free, so the flight controller and the host share one implementation. See [`docs/architecture/link.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/link.md#link) for design rationale.
 
 ## Messages
 
@@ -25,7 +25,7 @@ Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/s
 
 ## Frames
 
-A frame is `[version u8][postcard payload][crc16 LE]`, COBS-encoded and terminated by `0x00`; every message fits `MAX_FRAME_LEN` (384 bytes). `decode` rejects bad COBS, bytes after the delimiter, a CRC mismatch, another `PROTOCOL_VERSION`, or an invalid payload (`DecodeError`). Why it looks this way: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
+A frame is `[version u8][postcard payload][crc16 LE]`, COBS-encoded and terminated by `0x00`; every message fits `MAX_FRAME_LEN` (384 bytes). `decode` rejects bad COBS, bytes after the delimiter, a CRC mismatch, another `PROTOCOL_VERSION`, or an invalid payload (`DecodeError`). Why it looks this way: [`docs/architecture/link.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/link.md#link).
 
 `SendMessage::send_message` and `RecvMessage::recv_message` (blanket-implemented over the link halves) do the encode-and-send and receive-and-decode in one call, with a caller-supplied buffer; a `LinkError::Decode` loses only that frame. Underneath:
 
@@ -43,7 +43,7 @@ if let Some(len) = link.try_recv(&mut frame)? {
 
 ## Transports
 
-A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-blocking `send`, may drop); `Link` is blanket-implemented over both, and the split lets a commander and a telemetry publisher each own one half. `udp::UdpLink` (`std` feature) connects one fixed peer over UDP, one frame per datagram, for SITL and the bridge on a host; board transports (USB-CDC) live with the firmware. Which one runs where is in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
+A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-blocking `send`, may drop); `Link` is blanket-implemented over both, and the split lets a commander and a telemetry publisher each own one half. `udp::UdpLink` (`std` feature) connects one fixed peer over UDP, one frame per datagram, for SITL and the bridge on a host; board transports (USB-CDC) live with the firmware. Which one runs where is in [`docs/architecture/link.md`](https://github.com/wboayue/stable-flight/blob/main/docs/architecture/link.md#link).
 
 ## Features
 

@@ -7,7 +7,7 @@
 //! closed loop the controller feeds gyro noise into the moment, and that fit reads every lag as
 //! 0 under the sim's noise. This probe keeps a least-squares fit on the recorded moments for a
 //! quiet window, and fits a noisy one, excited longer and harder, with both sides integrated
-//! instead (`architecture.md#autotune`, #551, #603).
+//! instead (`docs/architecture/autotune-design-search.md#identify`, #551, #603).
 
 use nalgebra::{Complex, SMatrix, SVector};
 

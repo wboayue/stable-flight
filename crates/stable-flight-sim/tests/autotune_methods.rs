@@ -1,4 +1,4 @@
-//! The autotune method comparison behind `architecture.md#autotune` (#312): where the step
+//! The autotune method comparison behind `docs/architecture/autotune-design-search.md#rejected` (#312): where the step
 //! search's time goes, and three faster methods on the same plants, each held to the
 //! `step_response` spec on its own plant. Every test is an `#[ignore]`d sweep that prints a
 //! table; none asserts.

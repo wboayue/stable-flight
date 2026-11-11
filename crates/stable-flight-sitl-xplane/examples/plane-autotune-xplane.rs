@@ -3,7 +3,7 @@
 //! transition, and plane legs offshore at 300 m), hands over to the attitude hold a plane
 //! autotune flies in (`PlaneTuneHold`, at the thrust the last leg flew level on) once that leg
 //! flies straight and level for 3 s, tunes roll, then pitch, by the plane design
-//! (`StagePlan::plane_design`, `architecture.md#autotune`), and flies home in plane,
+//! (`StagePlan::plane_design`, `docs/architecture/autotune-plane.md`), and flies home in plane,
 //! transitions back, hovers over the start, and lands there
 //! (`stable_flight_sitl::autotune::PlaneTuneFlight`). Each axis is fitted from a square wave
 //! on its rate loop (the fit logged), its gains designed on the fit, and the design checked on

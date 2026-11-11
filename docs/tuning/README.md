@@ -19,7 +19,7 @@ airframe with that flight cited.
 
 The copter rate and angle loops can also be tuned automatically, by a step search from a
 loop-shaping design:
-`just fly-autotune` ([architecture.md](../../architecture.md#autotune)). On the plane side,
+`just fly-autotune` ([`docs/architecture/autotune.md`](../architecture/autotune.md#autotune)). On the plane side,
 core designs the roll and pitch loops from a fit flown in a tune hold, then checks them on
 attitude steps (`PlaneAutotune` with `StagePlan::plane_design`, `PlaneTuneHold`); it meets
 the plane spec on the sim. `just fly-plane-autotune` flies it in RealFlight and tuned the

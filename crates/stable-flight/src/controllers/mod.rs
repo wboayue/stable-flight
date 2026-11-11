@@ -126,7 +126,7 @@ pub(crate) fn check(
 
 /// The integrated error that keeps the I term `i · integral` unchanged when the integral gain
 /// goes from `old_i` to `new_i`, so a retune doesn't bump the output (the policy in
-/// `architecture.md#config-ownership`).
+/// `docs/architecture/config.md#config-ownership`).
 ///
 /// Unchanged when the gain is. Zero when either gain is zero (an integral accumulated under a
 /// zero gain was never applied, so carrying it in would bump) or the ratio isn't finite.
