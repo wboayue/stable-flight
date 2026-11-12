@@ -65,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** the plane design raises I by half on a pair whose two steps end
+  more than three quarters of the settle band apart, ahead of a slow rise's P raise: a steady
+  moment holds one short and the other past, which P doesn't remove. The sim Alia 250's pitch
+  design now converges whatever roll gains it flies on, where raising P clipped its nose-up
+  steps until it failed `Unverified` (#688).
 - **Breaking:** `LoopShapingConfig` has a new field, `cancel_lag`: a struct literal without
   `..COPTER_LOOP_SHAPING` adds `cancel_lag: true` to design as before (#572).
 - **Breaking (behavior):** a search whose start and verify both miss the criterion keeps the

@@ -44,6 +44,7 @@ fn good_step(tau_s: f32) -> StepMetrics {
         overshoot: 0.02,
         rise_time_s: Some(2.0 * tau_s),
         settling_time_s: Some(3.0 * tau_s),
+        final_value: 1.0,
         ..StepMetrics::default()
     }
 }
@@ -115,12 +116,13 @@ type Nudge = fn(PlaneAxisGains) -> PlaneAxisGains;
 /// A pair that misses nudges the candidate for the next: a sag (a step that doesn't settle)
 /// raises I by half, a step that holds past its target (keeps over half its overshoot)
 /// doubles it, a settled step that rises slowly raises P a grid step, an overshoot that swings
-/// back or a clip raises the time constant by 15%, and one that swings back but ends past the
-/// target doubles I and raises the time constant.
+/// back or a clip raises the time constant by 15%, one that swings back but ends past the
+/// target doubles I and raises the time constant, and a pair that ends apart raises I by half,
+/// even when a step also rises slowly.
 #[test]
 fn a_missed_pair_nudges_the_candidate() {
     // (row, the second step, the candidate change)
-    let rows: [(&str, SecondStep, Nudge); 7] = [
+    let rows: [(&str, SecondStep, Nudge); 9] = [
         (
             "sags",
             |tau_s| StepMetrics {
@@ -144,6 +146,36 @@ fn a_missed_pair_nudges_the_candidate() {
             |gains| PlaneAxisGains {
                 rate: RateGains {
                     p: gains.rate.p * SLOW_P_FACTOR,
+                    ..gains.rate
+                },
+                ..gains
+            },
+        ),
+        (
+            "rises slowly, ends close",
+            |tau_s| StepMetrics {
+                rise_time_s: Some(3.0 * tau_s),
+                final_value: 0.942,
+                ..good_step(tau_s)
+            },
+            |gains| PlaneAxisGains {
+                rate: RateGains {
+                    p: gains.rate.p * SLOW_P_FACTOR,
+                    ..gains.rate
+                },
+                ..gains
+            },
+        ),
+        (
+            "rises slowly, ends apart",
+            |tau_s| StepMetrics {
+                rise_time_s: Some(3.0 * tau_s),
+                final_value: 0.90,
+                ..good_step(tau_s)
+            },
+            |gains| PlaneAxisGains {
+                rate: RateGains {
+                    i: (gains.rate.i * SAG_I_FACTOR).max(MIN_SAG_I),
                     ..gains.rate
                 },
                 ..gains
