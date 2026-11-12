@@ -8,6 +8,3 @@ exclude-files = ["firmware/*", "crates/*/examples/*"]
 # A sim test binary goes over a minute without output under instrumentation on CI, past the
 # 60 s default.
 timeout = "600s"
-# LLVM source-based coverage, as on macOS: Linux defaults to ptrace, which stops the test at
-# each instrumented line and runs the sim's closed-loop tests several times slower.
-engine = "Llvm"
