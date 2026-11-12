@@ -11,7 +11,7 @@
 //! 3° of level for 5 s, it adds a cruise moment of `--pulse` for 1 s on one axis at a time, each
 //! sign in turn, with 4 s of quiet before each: roll (ailerons), pitch (elevators), and yaw
 //! (rudders). The plane loops keep flying under the pulse, so the response is the airframe's and
-//! the loops' together; the log names each pulse's start for the fit. After the pulses it holds
+//! the loops' together; the log names each pulse's and hold's start, in the recording's `wall_s`, for the fit. After the pulses it holds
 //! the ailerons at `--roll-hold` open loop (the roll loop's output replaced) for 1.5 s right,
 //! 3 s left, and 1.5 s right, ending near wings level: the steady roll rate under a held
 //! aileron measures the roll damping (#392). Then it holds the rudders at `--yaw-hold` open
@@ -28,11 +28,13 @@
 //!
 //! ```text
 //! cargo run --release -p stable-flight-sitl-xplane --example plane-probe-xplane -- --record probe.csv
+//! # the rudder holds alone, on the 3 km legs, without the roll holds' windup swing
+//! cargo run --release -p stable-flight-sitl-xplane --example plane-probe-xplane -- --no-pulses --no-roll-holds --record probe.csv
 //! ```
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use env_logger::Builder;
@@ -98,8 +100,9 @@ struct Args {
     /// The roll holds' aileron command, in place of the roll loop's (normalized).
     #[arg(long, default_value_t = 0.5)]
     roll_hold: f32,
-    /// The yaw holds' rudder command, in place of the yaw loop's (normalized).
-    #[arg(long, default_value_t = 0.5)]
+    /// The yaw holds' rudder command, in place of the yaw loop's (normalized): 0.15 flew every
+    /// leg of the Alia's yaw fit, where 0.5 banked it to 64° (#458).
+    #[arg(long, default_value_t = 0.15)]
     yaw_hold: f32,
     /// Skip the surface pulses: only the roll and rudder holds on each leg.
     #[arg(long)]
@@ -126,6 +129,11 @@ fn main() {
     let vehicle = XPlaneVehicle::connect(XPlaneConfiguration::new(bridge, airframe.mapping))
         .expect("X-Plane not ready");
 
+    // The probe's log times read on this clock, the recorder's `wall_s` made with it, so a fit
+    // finds each hold at its logged time.
+    let wall_start = Instant::now();
+    let recorder = CsvRecorder::create(args.record.as_deref(), QuadPlaneColumns)
+        .expect("failed to create the record CSV");
     let injection = Rc::new(Cell::new(Vec3::zeros()));
     let hold = Rc::new(Cell::new(None));
     let probe = Rc::new(RefCell::new(Probe::new(
@@ -137,14 +145,13 @@ fn main() {
         },
         injection.clone(),
         hold.clone(),
+        wall_start,
     )));
     let mixer = ProbeMixer {
         inner: airframe.mixer,
         injection,
         hold,
     };
-    let recorder = CsvRecorder::create(args.record.as_deref(), QuadPlaneColumns)
-        .expect("failed to create the record CSV");
 
     let mut flight_loop = FlightLoop::new(
         commander,
@@ -241,7 +248,8 @@ struct Probe {
     phase: Phase,
     /// The current leg's waypoint, to tell legs apart.
     leg: Option<[f32; 3]>,
-    elapsed_s: f32,
+    /// Where the log's times count from: the recorder's `wall_s` clock.
+    wall_start: Instant,
     started: bool,
     legs_probed: usize,
 }
@@ -251,6 +259,7 @@ impl Probe {
         schedule: Schedule,
         injection: Rc<Cell<Vec3>>,
         hold: Rc<Cell<Option<(usize, f32)>>>,
+        wall_start: Instant,
     ) -> Self {
         Probe {
             schedule,
@@ -258,7 +267,7 @@ impl Probe {
             hold,
             phase: Phase::Settling(0.0),
             leg: None,
-            elapsed_s: 0.0,
+            wall_start,
             started: false,
             legs_probed: 0,
         }
@@ -273,7 +282,6 @@ impl Probe {
             info!("recording starts at unix {unix_s:.3}");
         }
         let dt = record.dt.as_secs_f32();
-        self.elapsed_s += dt;
         let ControlInput::Waypoint(waypoint) = record.command.input else {
             return;
         };
@@ -300,8 +308,10 @@ impl Probe {
             Phase::Settling(held) if steady => {
                 if held + dt >= SETTLE_S {
                     info!(
-                        "t {:.1} s: leg at {:.0} m/s steady ({airspeed:.1} m/s, {:.0} m MSL): pulsing",
-                        self.elapsed_s, waypoint.cruise_speed_mps, state.position_m.z
+                        "t {:.1} s: leg at {:.0} m/s steady ({airspeed:.1} m/s, {:.0} m MSL): probing",
+                        self.wall_s(),
+                        waypoint.cruise_speed_mps,
+                        state.position_m.z
                     );
                     if self.schedule.pulses {
                         Phase::Quiet(0, 0.0)
@@ -320,7 +330,7 @@ impl Probe {
                 self.injection.set(injection);
                 info!(
                     "t {:.3} s: pulse {} {:+.2} at {airspeed:.1} m/s",
-                    self.elapsed_s,
+                    self.wall_s(),
                     AXES[axis],
                     sign * self.schedule.pulse
                 );
@@ -342,7 +352,7 @@ impl Probe {
                 if n + 1 == HOLDS.len() {
                     self.quiet();
                     self.legs_probed += 1;
-                    info!("t {:.1} s: leg probed", self.elapsed_s);
+                    info!("t {:.1} s: leg probed", self.wall_s());
                     Phase::Done
                 } else if HOLDS[n + 1].0 != HOLDS[n].0 {
                     self.quiet();
@@ -358,6 +368,11 @@ impl Probe {
 }
 
 impl Probe {
+    /// Seconds on the recorder's `wall_s` clock.
+    fn wall_s(&self) -> f32 {
+        self.wall_start.elapsed().as_secs_f32()
+    }
+
     /// No injection, no hold.
     fn quiet(&self) {
         self.injection.set(Vec3::zeros());
@@ -371,7 +386,8 @@ impl Probe {
         self.hold.set(Some((axis, moment)));
         info!(
             "t {:.3} s: {} hold {moment:+.2} for {hold_s:.1} s at {airspeed:.1} m/s",
-            self.elapsed_s, AXES[axis]
+            self.wall_s(),
+            AXES[axis]
         );
         Phase::Hold(n, 0.0)
     }
