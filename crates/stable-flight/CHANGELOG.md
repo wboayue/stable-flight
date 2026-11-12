@@ -25,21 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   low-pass, for one vibration tone, in ArduPilot's fixed harmonic notch form (center, width,
   depth). Off by default. `controllers::GyroFilters` is the chain the rate loop flies, and
   `CopterStabilizerConfig::gyro_filters_on` gives an axis's (#597).
-- `TecsConfig` fields for the total energy control's fixed time constants and underspeed
-  latch, with params and the old values as defaults (#622): `underspeed_share`
+- **Breaking:** `TecsConfig` fields for the total energy control's fixed time constants and
+  underspeed latch, with params and the old values as defaults (#622): `underspeed_share`
   (`PGUID_USPD_SHARE`, 0.9), `height_demand_time_constant_s` (`PGUID_HDEM_TC`, 3 s),
   `airspeed_rate_time_constant_s` (`PGUID_ASPD_RT_TC`, 0.5 s), `kinetic_rate_high_pass_s`
-  (`PGUID_KE_HPF_TC`, 1 s), and `guidance::plane::DEFAULT_*` consts for each.
-- Quadplane transition pitch and off-nose cut as config fields, with params and the old values
-  as defaults (#623): `LiftTransitionConfig::forward_pitch_max_rad` (`TRAN_FW_PIT_MAX`, 3°;
-  twice it plus 2° on the lift ramp, as ArduPilot's `Q_TRAN_PIT_MAX`), and
-  `OffNoseSpeedConfig::free_rad` (`OFFNOSE_FREE`, 20°), `full_rad` (`OFFNOSE_FULL`, 160°;
-  at or below `free_rad`, a step to the whole cut), and `tail_first_divisor` (`OFFNOSE_DIV`,
-  3), with `guidance::vtol::DEFAULT_*` consts for each.
-- `WindConfig` fields for the wind estimator's fixed limits, with params and the old values
-  as defaults (#624): `initial_sd_mps` (`GUID_WND_INIT_SD`, 10 m/s), `gate_sigma`
+  (`PGUID_KE_HPF_TC`, 1 s), and `guidance::plane::DEFAULT_*` consts for each; struct literals
+  add them or end in `..Default::default()`.
+- **Breaking:** quadplane transition pitch and off-nose cut as config fields, with params and
+  the old values as defaults (#623): `LiftTransitionConfig::forward_pitch_max_rad`
+  (`TRAN_FW_PIT_MAX`, 3°; twice it plus 2° on the lift ramp, as ArduPilot's `Q_TRAN_PIT_MAX`),
+  and `OffNoseSpeedConfig::free_rad` (`OFFNOSE_FREE`, 20°), `full_rad` (`OFFNOSE_FULL`, 160°; at
+  or below `free_rad`, a step to the whole cut), and `tail_first_divisor` (`OFFNOSE_DIV`, 3),
+  with `guidance::vtol::DEFAULT_*` consts for each; struct literals add them or end in
+  `..Default::default()`.
+- **Breaking:** `WindConfig` fields for the wind estimator's fixed limits, with params and the
+  old values as defaults (#624): `initial_sd_mps` (`GUID_WND_INIT_SD`, 10 m/s), `gate_sigma`
   (`GUID_WND_GATE`, 5), and `max_axial_speed_mps` (`GUID_WND_AX_SPD`, 1 m/s), with
-  `estimation::wind::DEFAULT_*` consts for each.
+  `estimation::wind::DEFAULT_*` consts for each; struct literals add them or end in
+  `..Default::default()`.
 - `commanders::TouchdownConfig` (#625): the touchdown detector's stopped band `stopped_mps`
   (0.1 m/s, below `DESCENDING_MPS`) and hold `hold_s` (1 s), with `DEFAULT_STOPPED_MPS` and
   `DEFAULT_TOUCHDOWN_HOLD_S`; `TouchdownDetector::new` takes one, `FailsafeConfig::touchdown`
