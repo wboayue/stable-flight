@@ -632,6 +632,40 @@ fn the_design_tunes_the_alia_250_to_the_spec() {
     design_converges(Subject::Alia);
 }
 
+/// The Alia 250's roll design clip allowances its pitch design is held across: its step
+/// tests' 0.25 s up to 0.5 s. From its own gains, roll designs P 0.0138 below 0.32 s and 0.0229
+/// from there, and on the second, pitch's nose-down steps end 0.90 against the nose-up's
+/// 1.005 until I supplies the moment (#688).
+const ALIA_ROLL_CLIPS_S: [f32; 3] = [0.25, 0.35, 0.5];
+
+/// The Alia's pitch design converges whatever roll gains it flies on: from its own gains, at
+/// each of [`ALIA_ROLL_CLIPS_S`], both stages tune and meet the spec.
+#[test]
+fn the_alia_250s_pitch_design_converges_whatever_its_roll_design() {
+    let subject = Subject::Alia;
+    for clip_s in ALIA_ROLL_CLIPS_S {
+        let start = subject.plane_config();
+        let hold = PlaneTuneHoldConfig {
+            return_radius_m: 1000.0,
+            ..subject.hold_config()
+        };
+        let mut plan = design_plan(subject, &start);
+        let PlaneMethod::Design(roll) = &mut plan[0].method else {
+            unreachable!("a design's plan");
+        };
+        roll.design.max_saturated_s = clip_s;
+        let envelope = PlaneEnvelope::for_plane(&start);
+        let run = tune_from(subject, hold, &plan, envelope, (0.0, Some(start)));
+        check!(
+            run.events.last() == Some(&AutotuneEvent::Complete),
+            "roll clip {clip_s} s: {:?}",
+            run.events.last()
+        );
+        let misses = spec_misses(subject, run.config.0);
+        check!(misses.is_empty(), "roll clip {clip_s} s: {misses:?}");
+    }
+}
+
 /// A fit term the sim eXplora's cruise is held to: (loop, name, the term in a fit,
 /// RealFlight's lowest and highest across its runs, most the sim's may fall outside them).
 type FitRow = (

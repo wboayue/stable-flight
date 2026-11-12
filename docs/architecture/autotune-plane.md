@@ -72,7 +72,12 @@ Part of the [architecture overview](../../architecture.md).
     offset is a moment only I supplies, and at a sag's rate the X-Plane Alia 250's I climbed
     from 0.01 to 0.85 through all eight pairs and its 20° steps still ended 1.09–1.22 past;
     the sim Alia, its yaw-rate roll moment fitted to X-Plane's held aileron (#458), tunes from
-    every start by the seventh, and at 1.5 doesn't (#537).
+    every start by the seventh, and at 1.5 doesn't (#537). A pair whose steps end more than
+    three quarters of the settle band apart is held off by a steady moment too, and raises I
+    by half ahead of a slow rise's P or an overshoot's τ: the sim Alia's nose-down pitch steps
+    ended 0.90 against the nose-up's 1.005 and crept in over 3 s whatever P, and raising P on
+    them clipped the nose-up steps until all eight pairs ran out; it converges on every
+    subject from half the band to the whole (#688).
   * On the sim it tunes the airplane, the eXplora, the Titan Cobra, and the Alia 250 to the
     plane spec (`tests/common/plane_spec.rs`) from their own gains, a third, and three times
     them: 42–60 s on the airplane and eXplora, 70–90 s on the Cobra, 434–512 s on the Alia,
