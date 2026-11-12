@@ -1,22 +1,24 @@
 //! The Alia 250's plane side on its sim model ([`airframes::alia250`], fitted to X-Plane, #392):
 //! level flight and a pitch-limited climb, which separate altitude and airspeed loops failed in
 //! X-Plane and total energy control flies (#454); PX4's attitude step spec; altitude steps,
-//! turn entry, and entry into plane flight, with the pitch side's margin.
+//! turn entry, and entry into plane flight, with the pitch side's margin; held rudder's sideslip
+//! and a turn's aileron against X-Plane's (#458).
 
 mod common;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use assert2::check;
 use stable_flight::guidance::vtol::{
     LiftTransitionConfig, QuadPlaneGuidance, QuadPlaneGuidanceConfig,
 };
+use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 use stable_flight::tuning::StepConfig;
 use stable_flight::{
-    Commander, ControlInput, FlightLoop, FlightMode, TelemetryPublisher, TelemetryRecord, Vec2,
-    WaypointCommand,
+    ActuatorCommand, Commander, ControlInput, ControlOutput, FlightLoop, FlightMode, Mixer,
+    Saturation, TelemetryPublisher, TelemetryRecord, Vec2, VehicleState, WaypointCommand,
 };
 use stable_flight_sim::airframes::QuadPlaneAirframe;
 use stable_flight_sim::{SimQuadPlane, Start, airframes};
@@ -102,6 +104,34 @@ fn flown<C: Commander, T: TelemetryPublisher>(
     seconds: f32,
     mut each: impl FnMut((f32, f32), f32),
 ) {
+    let mixer = airframe.mixer;
+    flown_mixed(
+        airframe,
+        start,
+        commander,
+        mixer,
+        telemetry,
+        seconds,
+        |state, t| {
+            each(
+                (state.position_m.z, state.airspeed_mps.unwrap_or(f32::NAN)),
+                t,
+            )
+        },
+    );
+}
+
+/// [`flown`] through `mixer` in place of the airframe's, calling `each` with each tick's state
+/// and the seconds flown.
+fn flown_mixed<C: Commander, M: Mixer, T: TelemetryPublisher>(
+    airframe: QuadPlaneAirframe,
+    start: Start,
+    commander: C,
+    mixer: M,
+    telemetry: T,
+    seconds: f32,
+    mut each: impl FnMut(&VehicleState, f32),
+) {
     let airframe = floorless(airframe);
     let vehicle = SimQuadPlane::new(airframe.model, &airframe.mixer)
         .expect("valid airframe")
@@ -111,16 +141,12 @@ fn flown<C: Commander, T: TelemetryPublisher>(
         vehicle,
         QuadPlaneGuidance::new(airframe.guidance),
         QuadPlaneStabilizer::new(airframe.stabilizer),
-        airframe.mixer,
+        mixer,
         telemetry,
     );
     flight_loop.prime();
     fly(&mut flight_loop, seconds, |flight_loop, t| {
-        let state = flight_loop.state();
-        each(
-            (state.position_m.z, state.airspeed_mps.unwrap_or(f32::NAN)),
-            t,
-        );
+        each(flight_loop.state(), t)
     });
 }
 
@@ -392,4 +418,166 @@ fn alia250_enters_a_turn_holding_altitude() {
         },
     );
     check!(worst_m <= TURN_ALTITUDE_M, "{worst_m} m");
+}
+
+/// The rudder command `plane-probe-xplane` holds open loop on each leg (normalized).
+const RUDDER_HOLD: f32 = 0.15;
+/// Its holds: sign and seconds, right, then left twice as long, then right.
+const RUDDER_HOLDS: [(f32, f32); 3] = [(1.0, 4.0), (-1.0, 8.0), (1.0, 4.0)];
+/// X-Plane's sideslip over the last second of a right rudder hold, in deg, nose left of the
+/// airflow negative: the range over #458's eight legs at 40–48 m/s. The sim reads −1.29° and
+/// −1.32°, 0.4° inside either end; on the yaw terms the fit replaced, −0.62°.
+const XPLANE_RIGHT_RUDDER_SIDESLIP_DEG: (f32, f32) = (-1.74, -0.86);
+/// The same for a left rudder hold; the sim reads 1.26°, 0.1° inside.
+const XPLANE_LEFT_RUDDER_SIDESLIP_DEG: (f32, f32) = (1.16, 1.67);
+
+/// The airframe's mixer with the cruise yaw moment replaced while a hold is on, as
+/// `plane-probe-xplane` holds the rudders: the yaw loop's output gone, the roll loop still
+/// flying the wings.
+struct RudderHold {
+    inner: TableMixer<8>,
+    hold: Rc<Cell<Option<f32>>>,
+}
+
+impl Mixer for RudderHold {
+    fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand {
+        let mut controls = *controls;
+        if let (Some(cruise), Some(rudder)) = (controls.cruise.as_mut(), self.hold.get()) {
+            cruise.moments.z = rudder;
+        }
+        self.inner.mix(&controls)
+    }
+
+    fn saturation(&self) -> Saturation {
+        self.inner.saturation()
+    }
+}
+
+/// The sideslip, in rad: the angle of the velocity out of the plane of symmetry, positive with
+/// the air coming from the right. Calm air, so the ground velocity is the air's.
+fn sideslip_rad(state: &VehicleState) -> f32 {
+    let body_mps = state.attitude.inverse_transform_vector(&state.velocity_mps);
+    libm::asinf(body_mps.y / body_mps.norm().max(1.0))
+}
+
+/// Held rudder sideslips the Alia as far as X-Plane's: the probe's holds from the line at trim
+/// airspeed end each within X-Plane's range over its legs, the fit of the weathercock, rudder,
+/// and yaw damping (#458) read back.
+#[test]
+fn alia250_sideslips_under_a_held_rudder_as_in_x_plane() {
+    const LEAD_S: f32 = 30.0;
+    let airframe = airframes::alia250();
+    let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
+    let hold = Rc::new(Cell::new(None));
+    let mixer = RudderHold {
+        inner: airframe.mixer,
+        hold: hold.clone(),
+    };
+    let mut starts_s = [0.0; RUDDER_HOLDS.len()];
+    let mut at_s = LEAD_S;
+    for (start_s, (_, seconds)) in starts_s.iter_mut().zip(RUDDER_HOLDS) {
+        *start_s = at_s;
+        at_s += seconds;
+    }
+    // Each hold's sideslip summed over its last second, and the ticks summed.
+    let mut sums = [(0f32, 0u32); RUDDER_HOLDS.len()];
+    flown_mixed(
+        airframe,
+        airframe.start,
+        north_line(300.0, airspeed_mps),
+        mixer,
+        (),
+        at_s,
+        |state, t| {
+            let on = starts_s
+                .iter()
+                .zip(RUDDER_HOLDS)
+                .position(|(start_s, (_, seconds))| t >= *start_s && t < start_s + seconds);
+            hold.set(on.map(|n| RUDDER_HOLDS[n].0 * RUDDER_HOLD));
+            if let Some(n) = on
+                && t >= starts_s[n] + RUDDER_HOLDS[n].1 - 1.0
+            {
+                sums[n].0 += sideslip_rad(state);
+                sums[n].1 += 1;
+            }
+        },
+    );
+    for ((sign, _), (sum_rad, ticks)) in RUDDER_HOLDS.into_iter().zip(sums) {
+        let sideslip_deg = (sum_rad / ticks.max(1) as f32).to_degrees();
+        let (low, high) = if sign > 0.0 {
+            XPLANE_RIGHT_RUDDER_SIDESLIP_DEG
+        } else {
+            XPLANE_LEFT_RUDDER_SIDESLIP_DEG
+        };
+        check!(
+            (low..=high).contains(&sideslip_deg),
+            "rudder {sign:+}: {sideslip_deg}°"
+        );
+    }
+}
+
+/// The loiter radius that banks the Alia 20° at its trim airspeed, in m: tan 20° = V²/(g·R).
+const BANK_20_DEG_RADIUS_M: f32 = 560.0;
+/// The aileron X-Plane's Alia holds against a steady 20° bank (normalized): 0.17–0.18 over three
+/// runs' turns, averaged both ways (#458). The band adds 0.01 each side for the reading's
+/// scatter. The sim holds 0.176; at the `c_roll_r` the fit replaced (0.14), 0.130.
+const XPLANE_TURN_AILERON: (f32, f32) = (0.16, 0.19);
+
+/// Each tick's aileron and bank, summed over ticks steady within 1.5° of a 20° bank.
+#[derive(Clone, Default)]
+struct SteadyBank(Rc<Cell<(f32, f32, u32)>>);
+
+impl TelemetryPublisher for SteadyBank {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        let (roll_rad, _, _) = stable_flight::euler_angles(&record.state.attitude);
+        let steady = (roll_rad.abs().to_degrees() - 20.0).abs() < 1.5
+            && record.state.angular_velocity_radps.x.abs() < 0.02;
+        if steady {
+            let (aileron, roll, ticks) = self.0.get();
+            self.0.set((
+                aileron + record.actuators.servos[0],
+                roll + roll_rad,
+                ticks + 1,
+            ));
+        }
+    }
+}
+
+/// In a steady 20° bank the Alia holds as much aileron against the turn as X-Plane's: the roll
+/// into the turn (`c_roll_r`, #458) read back. A loiter to the right from the line.
+#[test]
+fn alia250_holds_x_planes_aileron_in_a_turn() {
+    const LEAD_S: f32 = 30.0;
+    let mut airframe = airframes::alia250();
+    airframe.guidance.plane.loiter_radius_m = BANK_20_DEG_RADIUS_M;
+    let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
+    let loiter = plane_command(ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(2000.0, BANK_20_DEG_RADIUS_M),
+        velocity_mps: None,
+        altitude_m: 300.0,
+        cruise_speed_mps: airspeed_mps,
+        heading_rad: None,
+    }));
+    let commander = Interlude::new(
+        north_line(300.0, airspeed_mps),
+        LEAD_S,
+        f32::INFINITY,
+        loiter,
+    );
+    let bank = SteadyBank::default();
+    flown(
+        airframe,
+        airframe.start,
+        commander,
+        bank.clone(),
+        200.0,
+        |_, _| {},
+    );
+    let (aileron_sum, roll_sum, ticks) = bank.0.get();
+    check!(ticks > 0, "never steady in the bank");
+    let ticks = ticks.max(1) as f32;
+    // Positive against the turn: the aileron's sign opposite the bank's.
+    let against = -aileron_sum / ticks * (roll_sum / ticks).signum();
+    let (low, high) = XPLANE_TURN_AILERON;
+    check!((low..=high).contains(&against), "{against}");
 }
