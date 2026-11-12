@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-11
+
 ### Added
 
 - `StagePlan::large_copter_design_search`, `DesignPlan::large_copter`,
@@ -14,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   full-size multirotor, designing rate P without D (P reaches the phase margin through the
   motor lag), then the large-copter search. On the sim's Alia 250 it tunes every loop to within
   4% of the step search's rate P, where `copter_design_search` designs rate P 28.6 with D 4.9,
-  and its search, capped at P 3, keeps that D and never settles. `cancel_lag` is `true` in `COPTER_LOOP_SHAPING`, as the design was (#572).
-
+  and its search, capped at P 3, keeps that D and never settles. `cancel_lag` is `true` in
+  `COPTER_LOOP_SHAPING`, as the design was (#572).
 - `Maneuver::pause`: zero body rate at cruise thrust for a time, centered rate sticks on rates
   alone (#630).
 - `CopterStabilizerConfig::gyro_notch` (`controllers::NotchConfig`; params `STAB_NTCH_HZ`,
@@ -120,7 +122,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on their waypoint instead of overshooting by the drag the I learned on the way: the sim
   eXplora's 25 m legs overshot 1.0–2.5 m, now at most 0.25 m (#609). The RealFlight eXplora
   (`explora_vtol`) has a drag model, so it flies its legs differently.
-
 - **Breaking:** `tuning::Tunable` is generic over the loop type (`Tunable<TunedLoop>` for a
   copter's loops) instead of naming it as `Target`, so a VTOL stabilizer hosts both sides'
   probes; on a VTOL, name the side (`Tunable::<TunedLoop>::probe(&stabilizer)`). The
@@ -840,6 +841,7 @@ First release.
 - **`no_std`**, including the `testing` feature; builds for `thumbv7em-none-eabihf`. The tick
   never panics on bad input (saturate, NaN as neutral), only on `dt <= 0`.
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-v0.1.0

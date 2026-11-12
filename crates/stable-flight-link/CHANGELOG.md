@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-11
+
+### Changed
+
+- **Breaking:** depends on `stable-flight` 0.3; the messages carry its types, so upgrade the
+  two together. The wire format is unchanged (`PROTOCOL_VERSION` 10).
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
@@ -92,6 +99,7 @@ First release.
   `loopback::FailingLink` for error paths.
 - **`no_std`** (without `std`), allocation-free; builds for `thumbv7em-none-eabihf`.
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-link-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-link-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-link-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-link-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-link-v0.1.0

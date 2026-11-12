@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-11
+
 ### Added
 
 - `flights/explora_descent_wind.csv` (#653): the eXplora's 60 → 20 m hover descent with a 20 s
@@ -292,6 +294,7 @@ First release.
   - `exchange-latency-realflight`: times the RealFlight round trip alone, through the proxy or
     directly (`--local`).
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-realflight-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-realflight-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-realflight-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-realflight-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-realflight-v0.1.0
