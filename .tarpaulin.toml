@@ -5,3 +5,6 @@
 workspace = true
 all-features = true
 exclude-files = ["firmware/*", "crates/*/examples/*"]
+# A sim test binary goes over a minute without output under instrumentation on CI, past the
+# 60 s default.
+timeout = "600s"

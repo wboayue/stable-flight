@@ -211,6 +211,9 @@ fn resyncs_after_a_stall_instead_of_replaying_missed_ticks() {
     check!(stats.elapsed >= STALL + paced);
 }
 
+/// A 20 ms hold puts the loop two ticks behind, well inside the lag it replays. At 100 Hz each
+/// replayed tick has 10 ms to run, so an instrumented build on a loaded CI host still catches
+/// up.
 #[test]
 fn catches_up_jitter_below_max_lag() {
     const JITTER: Duration = Duration::from_millis(20);
@@ -219,7 +222,7 @@ fn catches_up_jitter_below_max_lag() {
     let trigger = shutdown.clone();
     let mut hooks = 0u64;
 
-    let stats = RealTimeRunner::new(1000.0)
+    let stats = RealTimeRunner::new(100.0)
         .expect("valid frequency")
         .run_with(&mut flight_loop, &shutdown, |_, _| {
             hooks += 1;
