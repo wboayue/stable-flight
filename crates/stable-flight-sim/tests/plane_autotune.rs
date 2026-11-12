@@ -576,13 +576,21 @@ fn design_converges(subject: Subject) {
 
 /// The design of `subject`'s roll and pitch from `start`, its hold far from turning back.
 fn design_run(subject: Subject, start: PlaneStabilizerConfig) -> Run {
+    design_run_on(subject, start, &design_plan(subject, &start))
+}
+
+/// [`design_run`] on `plan`.
+fn design_run_on(
+    subject: Subject,
+    start: PlaneStabilizerConfig,
+    plan: &[StagePlan<PlaneSide>],
+) -> Run {
     let hold = PlaneTuneHoldConfig {
         return_radius_m: 1000.0,
         ..subject.hold_config()
     };
-    let plan = design_plan(subject, &start);
     let envelope = PlaneEnvelope::for_plane(&start);
-    tune_from(subject, hold, &plan, envelope, (0.0, Some(start)))
+    tune_from(subject, hold, plan, envelope, (0.0, Some(start)))
 }
 
 #[test]
@@ -645,17 +653,12 @@ fn the_alia_250s_pitch_design_converges_whatever_its_roll_design() {
     let subject = Subject::Alia;
     for clip_s in ALIA_ROLL_CLIPS_S {
         let start = subject.plane_config();
-        let hold = PlaneTuneHoldConfig {
-            return_radius_m: 1000.0,
-            ..subject.hold_config()
-        };
         let mut plan = design_plan(subject, &start);
         let PlaneMethod::Design(roll) = &mut plan[0].method else {
             unreachable!("a design's plan");
         };
         roll.design.max_saturated_s = clip_s;
-        let envelope = PlaneEnvelope::for_plane(&start);
-        let run = tune_from(subject, hold, &plan, envelope, (0.0, Some(start)));
+        let run = design_run_on(subject, start, &plan);
         check!(
             run.events.last() == Some(&AutotuneEvent::Complete),
             "roll clip {clip_s} s: {:?}",

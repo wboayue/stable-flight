@@ -49,9 +49,10 @@ const HOLD_PAST_BOUNCE_SHARE: f32 = 0.5;
 const END_PAST_SHARE: f32 = 0.5;
 
 /// How far apart, as a share of the verify step's settle band, a pair's two steps may end
-/// before the pair raises I by [`SAG_I_FACTOR`]: one short of its target and the other on or
-/// past it is a steady moment pushing both the same way, which only I supplies; a higher P or
-/// a slower time constant leaves it. Lower raises I on smaller offsets. The sim Alia 250's 5°
+/// before the pair raises I by [`SAG_I_FACTOR`], ahead of a slow rise's P and an overshoot's
+/// time constant: steps that end apart, the usual case one short of its target and the other
+/// on or past it, are held off by a steady moment, which only I supplies; a higher P or a
+/// slower time constant leaves it. Lower raises I on smaller offsets. The sim Alia 250's 5°
 /// pitch steps from its own gains end 1.005 nose-up and 0.90 nose-down, 0.105 apart, the
 /// nose-down creeping in over 3 s whatever P; from a third of its gains its first pair ends
 /// 0.045 apart and tunes on a raised P. The design converges on every subject at 0.5–1.0 of the
@@ -69,8 +70,8 @@ const SLOW_P_FACTOR: f32 = 1.66;
 /// A [`PlaneDesignPlan`] as a pure state machine: a wing fit of the stage's axis, gains
 /// designed on it over several updates, then attitude pairs flown on the candidate until one
 /// meets the targets, each miss nudging the candidate (a sag, a hold past the target, or steps
-/// that end apart raise I, a slow rise P, an overshoot or clip the time constant, both I and the time constant an
-/// overshoot that swings back but ends past the target).
+/// that end apart raise I, a slow rise P, an overshoot or clip the time constant, both I and
+/// the time constant an overshoot that swings back but ends past the target).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::tuning::autotune) struct PlaneDesign {
     plan: PlaneDesignPlan,
@@ -268,7 +269,8 @@ impl PlaneDesign {
     /// and gives little of it back), more I for a sag (a step that doesn't settle), much more I
     /// and a slower time constant for an overshoot that swings back but still ends past the
     /// target, more I for steps that end apart (a steady moment the fit didn't see), more P for
-    /// a step that settles but rises too slowly (the rate loop lags its target), else (an overshoot that swings back to it, or a clip) a slower time constant.
+    /// a step that settles but rises too slowly (the rate loop lags its target), else (an
+    /// overshoot that swings back to it, or a clip) a slower time constant.
     /// A slower time constant doesn't speed a slow rise: the airplane's roll rose in 2.0, 2.5,
     /// 3.0, and 3.5 time constants at 0.56, 0.64, 0.74, and 0.85 s (#534).
     fn judge(
@@ -334,8 +336,9 @@ fn swings_and_ends_past(metrics: &StepMetrics, design: &WingDesignConfig) -> boo
         && metrics.final_value - 1.0 > END_PAST_SHARE * design.max_overshoot
 }
 
-/// Whether a pair's steps end further apart than [`ENDS_APART_SHARE`] of `settle_band`: as
-/// shares of their steps, so a steady moment that holds one short holds the other past.
+/// Whether a pair's steps end further apart than [`ENDS_APART_SHARE`] of `settle_band`, each
+/// as a share of its own step: a steady moment in one direction holds a nose-up step past its
+/// target and the nose-down one short, or the other way round.
 fn ends_apart(steps: &[StepMetrics; 2], settle_band: f32) -> bool {
     let [first, second] = steps;
     (first.final_value - second.final_value).abs() > ENDS_APART_SHARE * settle_band

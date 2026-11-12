@@ -118,11 +118,11 @@ type Nudge = fn(PlaneAxisGains) -> PlaneAxisGains;
 /// doubles it, a settled step that rises slowly raises P a grid step, an overshoot that swings
 /// back or a clip raises the time constant by 15%, one that swings back but ends past the
 /// target doubles I and raises the time constant, and a pair that ends apart raises I by half,
-/// even when a step also rises slowly.
+/// even when a step also rises slowly or overshoots.
 #[test]
 fn a_missed_pair_nudges_the_candidate() {
     // (row, the second step, the candidate change)
-    let rows: [(&str, SecondStep, Nudge); 9] = [
+    let rows: [(&str, SecondStep, Nudge); 10] = [
         (
             "sags",
             |tau_s| StepMetrics {
@@ -170,6 +170,22 @@ fn a_missed_pair_nudges_the_candidate() {
             "rises slowly, ends apart",
             |tau_s| StepMetrics {
                 rise_time_s: Some(3.0 * tau_s),
+                final_value: 0.90,
+                ..good_step(tau_s)
+            },
+            |gains| PlaneAxisGains {
+                rate: RateGains {
+                    i: (gains.rate.i * SAG_I_FACTOR).max(MIN_SAG_I),
+                    ..gains.rate
+                },
+                ..gains
+            },
+        ),
+        (
+            "overshoots, ends apart",
+            |tau_s| StepMetrics {
+                overshoot: 0.08,
+                bounce_back: 0.18,
                 final_value: 0.90,
                 ..good_step(tau_s)
             },
