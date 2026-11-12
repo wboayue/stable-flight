@@ -211,31 +211,38 @@ fn resyncs_after_a_stall_instead_of_replaying_missed_ticks() {
     check!(stats.elapsed >= STALL + paced);
 }
 
-/// A 20 ms hold puts the loop two ticks behind, well inside the lag it replays. At 100 Hz each
-/// replayed tick has 10 ms to run, so an instrumented build on a loaded CI host still catches
-/// up.
+/// A 20 ms hold puts the loop two ticks behind, well inside the lag it replays, so the ticks
+/// after it run short and nothing is skipped. The hold comes after a warmup and only the ticks
+/// from it on are checked: under coverage the first run of each line traps to the tracer, so
+/// the first ticks run long on their own. At 100 Hz each replayed tick has 10 ms to run.
 #[test]
 fn catches_up_jitter_below_max_lag() {
     const JITTER: Duration = Duration::from_millis(20);
+    const WARMUP_TICKS: u64 = 20;
+    const TICKS_AFTER_JITTER: u64 = 40;
     let mut flight_loop = hover_loop();
     let shutdown = ShutdownSignal::new();
     let trigger = shutdown.clone();
     let mut hooks = 0u64;
+    let mut overruns_before = 0;
+    let mut skipped_before = 0;
 
     let stats = RealTimeRunner::new(100.0)
         .expect("valid frequency")
-        .run_with(&mut flight_loop, &shutdown, |_, _| {
+        .run_with(&mut flight_loop, &shutdown, |_, stats| {
             hooks += 1;
-            if hooks == 2 {
+            if hooks == WARMUP_TICKS {
+                overruns_before = stats.overruns;
+                skipped_before = stats.skipped_ticks;
                 thread::sleep(JITTER);
             }
-            if hooks == 40 {
+            if hooks == WARMUP_TICKS + TICKS_AFTER_JITTER {
                 trigger.trigger();
             }
         });
 
-    check!(stats.overruns == 0);
-    check!(stats.skipped_ticks == 0);
+    check!(stats.overruns == overruns_before);
+    check!(stats.skipped_ticks == skipped_before);
 }
 
 /// A hook that holds each tick 8 ms halves a 250 Hz loop: once the rate window fills the runner
