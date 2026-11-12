@@ -132,8 +132,7 @@ const ALIA_PITCH_STEP_RAD: f32 = 5.0 * std::f32::consts::PI / 180.0;
 /// 15°/s roll rate limit holds every roll step to a ramp (sim: 14% measured).
 const ALIA_MAX_ROLL_OVERSHOOT: f32 = 0.15;
 /// How long the Alia's roll steps may clip, in s, in its step tests and its design, as
-/// `stable-flight-sim`'s `tests/plane_autotune.rs` has it: holding the 15°/s roll rate limit
-/// takes 0.90–0.92 of the aileron on its fits, past the design's 0.8 (#458).
+/// `stable-flight-sim`'s `tests/plane_autotune.rs` has it, with the measurements behind it.
 const ALIA_ROLL_MAX_SATURATED_S: f32 = 0.3;
 
 /// Autotune of the Alia 250's cruise side in X-Plane.

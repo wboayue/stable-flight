@@ -144,6 +144,11 @@ Code comments and docs link here instead of redefining a term.
 - **Plane of symmetry:** the plane through the nose and the belly that splits the airframe into
   mirror halves. A wing's lift and drag come from the air in it; air along the span (sideslip)
   pushes only sideways.
+- **Sideslip (β) / weathercock:** sideslip is the angle between the nose and the air it meets,
+  sideways. The weathercock is the moment that swings the nose back into the airflow, like a
+  vane: in yaw it grows with sideslip, in pitch with the angle of attack (pitch stiffness).
+- **Dihedral (effect):** the roll moment sideslip makes, rolling the plane away from the
+  sideslip: from wings tipped up toward their tips, a high wing, or a tall fin.
 - **Turn coordination:** adding yaw and pitch in a banked turn so the plane turns without
   sideslip (skidding sideways through the air).
 - **Step response:** how a loop answers a sudden setpoint change: **rise time** (how fast),
