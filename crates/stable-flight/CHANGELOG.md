@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LARGE_COPTER_LOOP_SHAPING`, and `LoopShapingConfig::cancel_lag`: the design search for a
   full-size multirotor, designing rate P without D (P reaches the phase margin through the
   motor lag), then the large-copter search. On the sim's Alia 250 it tunes every loop to within
-  4% of the step search's rate P, where `copter_design_search` designs rate P 28.6 with D 4.9,
-  and its search, capped at P 3, keeps that D and never settles. `cancel_lag` is `true` in
+  4% of the step search's rate P. The copter design search instead designs rate P 28.6 with D
+  4.9; its search, capped at P 3, keeps that D and never settles. `cancel_lag` is `true` in
   `COPTER_LOOP_SHAPING`, as the design was (#572).
 - `Maneuver::pause`: zero body rate at cruise thrust for a time, centered rate sticks on rates
   alone (#630).
@@ -76,8 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `..COPTER_LOOP_SHAPING` adds `cancel_lag: true` to design as before (#572).
 - **Breaking (behavior):** a search whose start and verify both miss the criterion keeps the
   verified gain when its steps overshoot and bounce back no more than the start's, instead of
-  the fallback (`Outcome::Tuned`): a start that misses is no gain to return to over one that
-  flies closer (#680).
+  the fallback (`Outcome::Tuned`): a start that also misses is no better to fall back to than
+  a result that flies closer (#680).
 - **Breaking (behavior):** `COPTER_YAW_RATE_STEP` (and `COPTER_YAW_RATE_TEST_STEP`, built on
   it) is filtered at 10 Hz, as ArduPilot filters a yaw twitch (`AUTOTUNE_Y_FILT_FREQ`), and
   `SearchPlan::copter_yaw_rate` confirms a bracket point on 3 passing pairs. Under gyro noise
@@ -87,24 +87,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window that reads noisy goes on exciting (amplitude and whole length); struct literals add
   it (`None` keeps the old behavior). `COPTER_IDENTIFY` extends a noisy window to 8 s at
   1.4 rad/s (#603).
-- **Breaking (behavior):** `IdentifyProbe` fits a noisy window on the recorded moment, both
-  sides integrated, at the delay with the least residual, rather than on the part of the
-  moment the excitation explains at the shortest near-tied delay: under the sim's gyro noise
-  with 10 ms of delay the fit reads 3–4 ticks where it read 1, and designs rate P within
-  0.88–1.08× the noise-free design's, against 2–2.9×. Quiet windows, RealFlight's among them,
-  keep the least-squares fit and the 3 s window unchanged. The window holds 8.2 s (26 KB)
-  (#603).
-- **Breaking:** `controllers::lateral::BRAKING_SHARE` is `DEFAULT_BRAKING_SHARE`, the default
-  of `LateralControllerConfig::braking_share`; `AltitudeControllerConfig`,
+- **Breaking (behavior):** `IdentifyProbe` fits a noisy window on the recorded moment through
+  a grid of lags and half-tick delays, both sides integrated, at the delay with the least
+  residual, so gyro noise in the moment no longer reads as the airframe: under the sim's gyro
+  noise with 10 ms of delay the fit reads 3–4 ticks where it read 1, and designs rate P within
+  0.88–1.08× the noise-free design's, against 2–2.9×. A quiet window (the least-squares fit
+  leaving at most 0.017 rad/s unexplained, as on RealFlight's) keeps the least-squares fit and
+  the 3 s window unchanged. The probe records its window, up to 8.2 s (26 KB), and fits once
+  at the end (#551, #603).
+- **Breaking:** `controllers::lateral::BRAKING_SHARE` is renamed `DEFAULT_BRAKING_SHARE`, the
+  default of `LateralControllerConfig::braking_share`; `AltitudeControllerConfig`,
   `LateralControllerConfig`, and `tuning::autotune::Settle` have new fields, so struct
   literals add them or end in `..Default::default()` (`Settle` has no default: add
   `max_speed_mps`) (#626).
 - **Breaking:** `FailsafeConfig` has a `touchdown` field (`TouchdownConfig`): struct literals
   add it or end in `..FailsafeConfig::default()`. `touchdown::STOPPED_MPS` and
-  `TOUCHDOWN_HOLD_S` are `DEFAULT_STOPPED_MPS` and `DEFAULT_TOUCHDOWN_HOLD_S`, and
-  `waypoint::PLANE_ALTITUDE_ACCEPTANCE_M` is `DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M` (#625).
-- **Breaking:** `estimation::wind::INITIAL_SD_MPS` is `DEFAULT_INITIAL_SD_MPS`, the default of
-  `WindConfig::initial_sd_mps` (#624).
+  `TOUCHDOWN_HOLD_S` are renamed `DEFAULT_STOPPED_MPS` and `DEFAULT_TOUCHDOWN_HOLD_S`, and
+  `waypoint::PLANE_ALTITUDE_ACCEPTANCE_M` is renamed `DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M`
+  (#625).
+- **Breaking:** `estimation::wind::INITIAL_SD_MPS` is renamed `DEFAULT_INITIAL_SD_MPS`, the
+  default of `WindConfig::initial_sd_mps` (#624).
 - **Breaking:** `CopterGuidance`'s fixed limits are `CopterGuidanceConfig` fields, with params
   and the old values as defaults (#621): `stick_yaw_rate_radps` (`GUID_STICK_YAW`, 1 rad/s),
   `idle_throttle` (`GUID_THR_IDLE`, 0.05), `heading_yield_rate_radps` (`GUID_YAW_YLD_RT`,
@@ -113,12 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`GUID_WND_HDG_SD`, 15°), `wind_heading_deadband_rad` (`GUID_WND_HDG_DB`, 10°),
   `airborne_height_m` (`GUID_WND_AIR_HT`, 1 m), and `feedforward_hold_band_mps`
   (`GUID_WND_FF_BAND`, 0.3 m/s). `guidance::copter::IDLE_THROTTLE`, `ALTITUDE_LEASH_M`, and
-  `AIRBORNE_HEIGHT_M` are now `DEFAULT_IDLE_THROTTLE`, `DEFAULT_ALTITUDE_LEASH_M`, and
+  `AIRBORNE_HEIGHT_M` are renamed `DEFAULT_IDLE_THROTTLE`, `DEFAULT_ALTITUDE_LEASH_M`, and
   `DEFAULT_AIRBORNE_HEIGHT_M`; a `CopterGuidanceConfig` struct literal needs the new fields
   (or `..Default::default()`).
 - **Breaking (behavior):** hover guidance with a drag model (`GUID_WND_BCOEF`/`MCOEF`) feeds
-  a leg's drag forward: the push the lateral loop's commanded velocity, past 0.3 m/s, takes
-  through the estimated wind. The lateral I term then trims only the wind, and hover legs stop
+  a leg's drag forward: the drag the commanded velocity meets through the estimated wind, once
+  it exceeds 0.3 m/s. The lateral I term then trims only the wind, and hover legs stop
   on their waypoint instead of overshooting by the drag the I learned on the way: the sim
   eXplora's 25 m legs overshot 1.0–2.5 m, now at most 0.25 m (#609). The RealFlight eXplora
   (`explora_vtol`) has a drag model, so it flies its legs differently.
@@ -127,8 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probes; on a VTOL, name the side (`Tunable::<TunedLoop>::probe(&stabilizer)`). The
   supervisor is `Supervisor<K: Side>`, with `Autotune` the copter's
   (`Supervisor<CopterSide>`); `StagePlan`, `AutotuneEvent`, and `AutotuneStatus` take the
-  side's types, defaulting to the copter's. `AutotuneAbort` gains `AirspeedLow` and
-  `AirspeedHigh` (#534).
+  side's types, defaulting to the copter's (#534).
 - **Breaking:** `tuning::LoopSignals` gains `alpha_rad` (0 outside a wing's pitch axis);
   `ProbeConfig`, `Measurement`, `AutotuneAbort`, and `DesignError` gain variants (#534).
 - **Breaking (behavior):** a VTOL stabilizer's hover probe is interrupted when the setpoint
@@ -140,13 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `IdentifyAbort::Saturated`: a window whose moments mostly sit at the rate
   loop's limit while the least squares leaves it noisy is no longer fitted. A design stage
   answers it on a rate loop by lowering its start, every gain ÷ 1.6, and fitting again at
-  once, without waiting for the settle, up to eight times (#551, #598, #673). `IdentifyAbort` is now `#[non_exhaustive]`.
-- **Breaking (behavior):** `IdentifyProbe` fits a noisy window in two stages: the moment
-  projected on the probe's excitation, then a lag and half-tick delay grid on it, so gyro
-  noise in the moment no longer reads as the airframe (the sim's noise rows read every lag as
-  0 before). A quiet window (the least-squares fit leaving at most 0.017 rad/s
-  unexplained, as on RealFlight's) or one whose moments mostly sit at the rate loop's limit
-  keeps the least-squares fit on the recorded moments, unchanged. The probe records its window (13 KB) and fits once at the end (#551).
+  once, without waiting for the settle, up to eight times (#551, #598, #673). `IdentifyAbort`
+  is now `#[non_exhaustive]`.
 - **Breaking:** `BodyRateControllerConfig::max_integral` and `yaw_max_integral` (params
   `STAB_RATE_IMAX`, `STAB_RATE_IMAX_Z`) are the most moment the rate I terms hold, in
   normalized moment, not a limit on the integrated error in rad: the rate loop integrates

@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A script's `pause:<s>` maneuver flies centered rate sticks that long (`Maneuver::pause`,
   #630).
 - `autotune::PlaneTuneFlight` and its `PlaneTuneSwitch` (#535): a VTOL's plane autotune
-  flight, a script into plane flight, then the `PlaneTuneHold`, then home in plane (`PlaneHome`: a leg back and forth through the start at
-  its altitude, the hover-back radius, the overfly), a hover back over the start, and a land
+  flight, a script into plane flight, then the `PlaneTuneHold`, then home in plane
+  (`PlaneHome`: a leg back and forth through the start at its altitude, the hover-back
+  radius, the overfly), a hover back over the start, and a land
   there (or a land in place after a recovery).
 - `autotune::log_event` logs plane runs too: `TunedConfig`, implemented for
   `CopterStabilizerConfig` and `PlaneStabilizerConfig`, formats a stage's gains and prints the

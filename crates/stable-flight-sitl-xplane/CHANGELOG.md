@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plane-autotune-xplane` example (`just fly-xplane-plane-autotune`): plane autotune of the
   Alia 250's cruise side from an attitude hold 6 km offshore (`flights/alia_plane_tune.csv`),
   then home and a landing on the spawn (#537).
-- `plane-probe-xplane` holds the rudders open loop on each leg (`--yaw-hold`, default 0.15; 4 s right,
-  8 s left, 4 s right) for the yaw damping and sideslip fit; `--no-pulses` and `--no-roll-holds`
-  skip the pulses and the roll holds. The log's
-  times are the recording's `wall_s` (#458).
+- `plane-probe-xplane` holds the rudders open loop on each leg (`--yaw-hold`, default 0.15;
+  4 s right, 8 s left, 4 s right) for the yaw damping and sideslip fit; `--no-pulses` and
+  `--no-roll-holds` skip the pulses and the roll holds. The log's times are the recording's
+  `wall_s` (#458).
 
 ### Changed
 

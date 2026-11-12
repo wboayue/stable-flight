@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Built on `stable-flight` 0.3: QGC's parameter list and metadata include its new params
   (copter guidance and wind limits, plane total energy time constants, transition pitch,
-  off-nose speed, attitude I limits, and the gyro notch).
+  off-nose speed, the rate loop's yaw I limit, and the gyro notch).
 
 ## [0.2.0] - 2026-10-30
 
