@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 ### Added
 
 - `plane-autotune-xplane` example (`just fly-xplane-plane-autotune`): plane autotune of the
   Alia 250's cruise side from an attitude hold 6 km offshore (`flights/alia_plane_tune.csv`),
   then home and a landing on the spawn (#537).
-- `plane-probe-xplane` holds the rudders open loop on each leg (`--yaw-hold`, default 0.15; 4 s right,
-  8 s left, 4 s right) for the yaw damping and sideslip fit; `--no-pulses` and `--no-roll-holds`
-  skip the pulses and the roll holds. The log's
-  times are the recording's `wall_s` (#458).
+- `plane-probe-xplane` holds the rudders open loop on each leg (`--yaw-hold`, default 0.15;
+  4 s right, 8 s left, 4 s right) for the yaw damping and sideslip fit; `--no-pulses` and
+  `--no-roll-holds` skip the pulses and the roll holds. The log's times are the recording's
+  `wall_s` (#458).
 
 ### Changed
 
@@ -26,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.31 m/s against 3.33, handoff dip 4.1 m against 4.0, roll RMS 1.72° against 1.71°.
 - `plane-autotune-xplane` lets the Alia's roll design clip for 0.3 s, as its roll step tests
   may: holding its 15°/s roll rate limit takes more aileron than the design's 0.8 (#458).
-
 - **Breaking (behavior):** `airframes::alia250()`'s plane side answers altitude errors on a
   3 s total energy time constant (`PGUID_TCONST`, was 5 s) and flies pitch rate I 1
   (`PSTAB_PIT_I`, was 0.5) (#547). A descent turning at the 20° bank cap sank 5.65 m/s past
@@ -83,5 +84,6 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
 - `sweep::EngineSweep` and `engine-sweep-xplane`: a multirotor's yaw sign per diagonal,
   liftoff throttle, motor lag, and moment response, measured on the runway.
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-xplane-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-xplane-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-xplane-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-xplane-v0.2.0

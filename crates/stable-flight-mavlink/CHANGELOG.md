@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
+### Changed
+
+- **Breaking:** depends on `stable-flight` 0.3; the builders take its types, so upgrade the
+  two together.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
@@ -48,6 +55,7 @@ First release.
 - **`testing` feature:** `testing::MockConnection`, a scripted `MavConnection` (receives in
   order, then `WouldBlock`; sends recorded, optionally failing) for tests.
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-mavlink-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-mavlink-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-mavlink-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-mavlink-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-mavlink-v0.1.0

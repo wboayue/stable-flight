@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
+### Changed
+
+- Built on `stable-flight` 0.3: QGC's parameter list and metadata include its new params
+  (copter guidance and wind limits, plane total energy time constants, transition pitch,
+  off-nose speed, the rate loop's yaw I limit, and the gyro notch).
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
@@ -66,6 +74,7 @@ First release.
   served to QGC as component metadata (plain JSON over HTTP at CRC-versioned paths;
   `--http-bind`, `--http-url`, `--no-metadata`).
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-bridge-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-bridge-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-bridge-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-bridge-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-bridge-v0.1.0

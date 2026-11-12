@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 ### Added
 
 - `ScriptCommander::with_touchdown`: when the script's land has touched down and disarms
@@ -14,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A script's `pause:<s>` maneuver flies centered rate sticks that long (`Maneuver::pause`,
   #630).
 - `autotune::PlaneTuneFlight` and its `PlaneTuneSwitch` (#535): a VTOL's plane autotune
-  flight, a script into plane flight, then the `PlaneTuneHold`, then home in plane (`PlaneHome`: a leg back and forth through the start at
-  its altitude, the hover-back radius, the overfly), a hover back over the start, and a land
+  flight, a script into plane flight, then the `PlaneTuneHold`, then home in plane
+  (`PlaneHome`: a leg back and forth through the start at its altitude, the hover-back
+  radius, the overfly), a hover back over the start, and a land
   there (or a land in place after a recovery).
 - `autotune::log_event` logs plane runs too: `TunedConfig`, implemented for
   `CopterStabilizerConfig` and `PlaneStabilizerConfig`, formats a stage's gains and prints the
@@ -128,6 +131,7 @@ First release.
 - Examples: `extreme_3d_commander` (joystick smoke test), `spektrum_commander` (raw dongle
   values next to the command, for checking the mapping).
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-v0.2.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-v0.3.0...HEAD
+[0.3.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-v0.3.0
 [0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-v0.1.0
