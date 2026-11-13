@@ -55,6 +55,14 @@ pub const PLANE_MAX_OVERSHOOT: f32 = 0.05;
 /// first order, which rises in 2.2.
 pub const PLANE_RISE_PER_TIME_CONSTANT: f32 = 2.2;
 
+/// How far past [`PLANE_RISE_PER_TIME_CONSTANT`] a plane design's verify step may rise, as a
+/// ratio: the design holds its model to a first order's own rise, and a rate loop's lag in
+/// flight adds to it, so a check at the bare limit fails a pair a few hundredths of a time
+/// constant over, and raising P doesn't speed it. The X-Plane Alia 250's pitch rose in 2.21,
+/// 2.36, and 2.22 time constants on three pairs as P went from 0.8 to 3.66 (#694). Higher:
+/// passes a slower rise; at 1 the verify holds the design's limit.
+pub const PLANE_VERIFY_RISE_MARGIN: f32 = 1.1;
+
 /// The time constants a plane design picks from, in s: PX4's `FW_R_TC` and `FW_P_TC` range
 /// from 0.2 up, and the Alia 250's roll needed up to 1.5 on the sim (#533).
 pub const PLANE_TIME_CONSTANT_RANGE_S: [f32; 2] = [0.2, 1.5];
@@ -78,6 +86,9 @@ pub struct PlaneDesignPlan {
     pub design: WingDesignConfig,
     /// The attitude step a pair flies, each way; its amplitude should be the design's.
     pub verify: StepConfig,
+    /// How far past the design's `rise_per_time_constant` a pair's steps may rise, as a ratio.
+    /// At least 1.
+    pub verify_rise_margin: f32,
     /// Most pairs before the stage fails ([`AutotuneAbort::Unverified`]). Positive.
     pub max_verify_pairs: usize,
     /// Design candidates stepped per update: about 4,000 multiplies each. Positive.
@@ -91,8 +102,9 @@ impl PlaneDesignPlan {
     /// at [`PLANE_IDENTIFY_SHARE`] of the axis's rate limit, a design to
     /// [`PLANE_MAX_OVERSHOOT`], [`PLANE_RISE_PER_TIME_CONSTANT`], and
     /// [`PLANE_MAX_SATURATED_S`] within [`PLANE_TIME_CONSTANT_RANGE_S`] and
-    /// [`PLANE_MOMENT_SHARE`] of the throw, the step [`StepTestPlan::plane`]'s, up to 8
-    /// pairs, 4 candidates per update, from [`PLANE_STEP_SETTLE`].
+    /// [`PLANE_MOMENT_SHARE`] of the throw, the step [`StepTestPlan::plane`]'s, risen within
+    /// [`PLANE_VERIFY_RISE_MARGIN`] of the design's limit, up to 8 pairs, 4 candidates per
+    /// update, from [`PLANE_STEP_SETTLE`].
     ///
     /// # Examples
     ///
@@ -136,19 +148,26 @@ impl PlaneDesignPlan {
                 rise_per_time_constant: PLANE_RISE_PER_TIME_CONSTANT,
             },
             verify,
+            verify_rise_margin: PLANE_VERIFY_RISE_MARGIN,
             max_verify_pairs: 8,
             candidates_per_update: 4,
             settle: PLANE_STEP_SETTLE,
         }
     }
 
-    /// Checks the identification, the design, the step, and that the counts are positive.
+    /// Checks the identification, the design, the step, that the rise margin is at least 1,
+    /// and that the counts are positive.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.identify
             .validate()
             .map_err(|e| e.in_section("identify"))?;
         self.design.validate().map_err(|e| e.in_section("design"))?;
         self.verify.validate().map_err(|e| e.in_section("verify"))?;
+        check(
+            "verify_rise_margin",
+            self.verify_rise_margin >= 1.0,
+            "at least 1",
+        )?;
         check("max_verify_pairs", self.max_verify_pairs > 0, "positive")?;
         check(
             "candidates_per_update",

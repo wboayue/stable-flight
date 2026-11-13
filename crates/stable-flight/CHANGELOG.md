@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   roll that pick tied along a band of P and took its first cell, designing P 0.005 to 0.482
   over fits 10% apart; it now designs 0.038 to 0.105. Designed P and I move on every
   airframe (#694).
+- **Breaking (behavior):** a plane design's verify steps pass on a rise up to
+  `PLANE_VERIFY_RISE_MARGIN` (1.1) past the design's `rise_per_time_constant`, where they
+  needed the limit itself, and raise P only past that. The design holds its model to a first
+  order's own rise, and on the X-Plane Alia 250's pitch three pairs failed at 2.21–2.36 time
+  constants while P went from 0.8 to 3.66 (#694).
+- **Breaking:** `PlaneDesignPlan::verify_rise_margin`, at least 1 (#694).
 
 ## [0.3.0] - 2026-11-12
 
