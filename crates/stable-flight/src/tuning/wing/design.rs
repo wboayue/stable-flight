@@ -139,8 +139,8 @@ pub enum WingDesignStatus {
 /// the allowance, settles, rises within `rise_per_time_constant` × τ, and clips for no longer
 /// than allowed: the plane spec's targets. τ is bisected to the quickest at which some P and I
 /// on a coarse grid pass (16 × 12), then raised by 15% for margin; at that τ the design takes
-/// the passing P and I farthest from any failing one on the grid, the middle of what works,
-/// so a model a little off still flies. An I too small to hold the model's trim (beyond the
+/// the passing P and I deepest inside what passes, counted along P and along I, the middle of
+/// what works, so a model a little off still flies. An I too small to hold the model's trim (beyond the
 /// static trim) within half the integral limit never passes: the integral would clip holding
 /// it. The airplane's pitch designed at I 0.25 against a 2 rad limit sat 1.75° off its held
 /// attitude, slowed 1.75 m/s, and its stage timed out settling (#534).
@@ -332,22 +332,29 @@ impl WingDesign {
         }
     }
 
-    /// The gains at the passing cell farthest, in grid steps along P and I, from a failing
-    /// one or the grid's edge.
+    /// The gains at the passing cell deepest inside what passes: its depth along P (the
+    /// passing cells on both sides of it, the fewer of the two sides) plus its depth along I.
+    /// Each axis counts on its own, so a band that passes across many P but few I still has
+    /// a middle in P: a depth that needs every direction at once ties along the whole band and
+    /// takes its first cell. The X-Plane Alia 250's roll passes P 0.005–2.21 in two or three I
+    /// cells, and that tie designed P 0.005 to 0.482 over fits 10% apart, where the sum
+    /// designs 0.038 to 0.105 (#694).
     fn pick(&self, tau_s: f32, passes: &[bool; CELLS]) -> WingDesignStatus {
         let passing = |p: isize, i: isize| {
             let inside =
                 (0..P_GRID.len() as isize).contains(&p) && (0..I_GRID.len() as isize).contains(&i);
             inside && passes[p as usize * I_GRID.len() + i as usize]
         };
-        let depth = |p: isize, i: isize| {
+        // Passing cells in a row from (p, i), one grid step (dp, di) at a time.
+        let run = |p: isize, i: isize, dp: isize, di: isize| {
             (1..)
-                .take_while(|&d| {
-                    [(d, 0), (-d, 0), (0, d), (0, -d)]
-                        .iter()
-                        .all(|&(dp, di)| passing(p + dp, i + di))
-                })
+                .take_while(|&d| passing(p + d * dp, i + d * di))
                 .count()
+        };
+        let depth = |p: isize, i: isize| {
+            let along_p = run(p, i, 1, 0).min(run(p, i, -1, 0));
+            let along_i = run(p, i, 0, 1).min(run(p, i, 0, -1));
+            along_p + along_i
         };
         let best = (0..CELLS)
             .filter(|&cell| passes[cell])

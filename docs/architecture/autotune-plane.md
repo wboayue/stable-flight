@@ -46,10 +46,13 @@ Part of the [architecture overview](../../architecture.md).
   * **Design** (`WingDesign`): the spec's attitude step flown on the fitted model, a candidate
     passing when it overshoots by no more than 5%, settles, rises within 2.2τ, and clips no
     longer than a step may. τ is bisected to the quickest at which some P and I on a 16 × 12
-    grid pass, raised 15%, and the passing cell farthest from a failing one taken; the moment
-    is held 20% short of full throw, and I must hold the fit's trim within half the integral
-    limit (the airplane's pitch at I 0.25 couldn't, sat 1.75° off its hold, and its stage
-    timed out settling). About 1,350 candidates, four per update. A stiff axis fitted with
+    grid pass, raised 15%, and the passing cell deepest inside what passes taken, its depth
+    along P plus its depth along I. A depth that needs every direction at once tied along the
+    X-Plane Alia's roll, which passes P 0.005–2.21 in two or three I cells, and took the
+    band's first cell: P 0.005 to 0.482 over fits 10% apart, against 0.038 to 0.105 counted
+    per axis (#694). The moment is held 20% short of full throw, and I must hold the fit's
+    trim within half the integral limit (the airplane's pitch at I 0.25 couldn't, sat 1.75°
+    off its hold, and its stage timed out settling). About 1,350 candidates, four per update. A stiff axis fitted with
     damping at or below 0 is designed undamped, with no FF: the trade-off in the fit carries a
     barely damped pitch past 0 under a high P (the sim eXplora's from 1.63/s at P 0.008 to
     −0.62/s at 0.24; RealFlight's from ×3 gains to −7.6/s), and the design on the floored model
