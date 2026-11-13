@@ -512,7 +512,7 @@ pub fn log_event<T: Debug, C: TunedConfig>(
             target,
             measurement: Measurement::Wing(model),
         } => info!(
-            "autotune: {target:?} fit: stiffness {:.1}/s², damping {:.1}/s, control {:.0} rad/s², \
+            "autotune: {target:?} fit: stiffness {:.2}/s², damping {:.2}/s, control {:.2} rad/s², \
              lag {}, delay {}, path turn {:.2}/s, trim moment {:.3}",
             model.stiffness_per_s2,
             model.damping_per_s,

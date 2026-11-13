@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The autotune log prints a plane fit's stiffness, damping, and control to two decimals (#694).
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
