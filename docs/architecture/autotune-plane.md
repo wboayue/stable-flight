@@ -61,9 +61,12 @@ Part of the [architecture overview](../../architecture.md).
     probe can't tell a start is too high (#618).
   * **Check:** attitude pairs on the candidate, each step held on it first so the rate loop's
     integral holds what it needs (from ×3 gains the committed loop's I term, carried over,
-    slowed every second step 3.6 s against 1.1 s). A sag raises I by half, a slow rise P a
-    grid step (a slower τ rose slower still: 2.0τ to 3.5τ from 0.56 to 0.85 s), an overshoot
-    or clip τ by 15%; eight pairs, then the stage fails. An overshoot that keeps more than
+    slowed every second step 3.6 s against 1.1 s). A step passes on a rise up to 10% past
+    the design's 2.2τ, a first order's own rise: a rate loop's lag in flight adds to it, and
+    at the bare limit the X-Plane Alia's pitch failed pairs at 2.21τ, 2.36τ, and 2.22τ while P
+    went from 0.8 to 3.66 and the rise didn't change (#694). A sag raises I by half, a slow
+    rise P a grid step (a slower τ rose slower still: 2.0τ to 3.5τ from 0.56 to 0.85 s), an
+    overshoot or clip τ by 15%; eight pairs, then the stage fails. An overshoot that keeps more than
     half of itself to the step's end holds past the target rather than swinging past it, and
     raises I: a wing that rolls into its turns needs a steady aileron in a bank
     the fit from level flight doesn't see, and a slower τ only widens the error that holds it

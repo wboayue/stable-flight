@@ -499,6 +499,13 @@ fn rejects_an_invalid_design_plan() {
             },
         ),
         (
+            "verify_rise_margin",
+            PlaneDesignPlan {
+                verify_rise_margin: 0.9,
+                ..good
+            },
+        ),
+        (
             "max_verify_pairs",
             PlaneDesignPlan {
                 max_verify_pairs: 0,

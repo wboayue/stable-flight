@@ -22,7 +22,8 @@ pub use plane::{
     AirspeedSettle, PLANE_IDENTIFY_S, PLANE_IDENTIFY_SHARE, PLANE_MAX_OVERSHOOT,
     PLANE_MAX_SATURATED_S, PLANE_MOMENT_SHARE, PLANE_PITCH_STEP, PLANE_RATE_STEP,
     PLANE_RISE_PER_TIME_CONSTANT, PLANE_ROLL_STEP, PLANE_STEP_SETTLE, PLANE_TIME_CONSTANT_RANGE_S,
-    PlaneAutotune, PlaneDesignPlan, PlaneEnvelope, PlaneMethod, PlaneSide,
+    PLANE_VERIFY_RISE_MARGIN, PlaneAutotune, PlaneDesignPlan, PlaneEnvelope, PlaneMethod,
+    PlaneSide,
 };
 use procedure::Action;
 pub use side::{CopterSide, Side, SideConfig, SideTunable};
