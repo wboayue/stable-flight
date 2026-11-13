@@ -26,13 +26,13 @@ fn test_hover_no_moments() {
     let output = mixer.mix(&input);
 
     let expected = 0.9;
-    for i in 0..4 {
+    for (i, &motor) in output.motors.iter().enumerate().take(4) {
         assert!(
-            approx_eq(output.motors[i], expected),
+            approx_eq(motor, expected),
             "Motor {} expected {} but got {}",
             i,
             expected,
-            output.motors[i]
+            motor
         );
     }
 }
@@ -267,13 +267,13 @@ fn test_partial_thrust() {
     let output = mixer.mix(&input);
 
     let expected = 0.45;
-    for i in 0..4 {
+    for (i, &motor) in output.motors.iter().enumerate().take(4) {
         assert!(
-            approx_eq(output.motors[i], expected),
+            approx_eq(motor, expected),
             "Motor {} expected {} but got {}",
             i,
             expected,
-            output.motors[i]
+            motor
         );
     }
 }
