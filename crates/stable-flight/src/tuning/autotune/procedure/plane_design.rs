@@ -264,13 +264,14 @@ impl PlaneDesign {
         ProbeConfig::Step(if second { step.reversed() } else { step })
     }
 
-    /// Finishes on `candidate` when both of `pair`'s steps meet the targets; else flies the
-    /// next pair on it nudged: much more I for a step that holds past its target (overshoots
-    /// and gives little of it back), more I for a sag (a step that doesn't settle), much more I
-    /// and a slower time constant for an overshoot that swings back but still ends past the
-    /// target, more I for steps that end apart (a steady moment the fit didn't see), more P for
-    /// a step that settles but rises too slowly (the rate loop lags its target), else (an
-    /// overshoot that swings back to it, or a clip) a slower time constant.
+    /// Finishes on `candidate` when both of `pair`'s steps meet the targets, their rise within
+    /// the plan's `verify_rise_margin` of the design's; else flies the next pair on it nudged:
+    /// much more I for a step that holds past its target (overshoots and gives little of it
+    /// back), more I for a sag (a step that doesn't settle), much more I and a slower time
+    /// constant for an overshoot that swings back but still ends past the target, more I for
+    /// steps that end apart (a steady moment the fit didn't see), more P for a step that
+    /// settles but rises too slowly (the rate loop lags its target), else (an overshoot that
+    /// swings back to it, or a clip) a slower time constant.
     /// A slower time constant doesn't speed a slow rise: the airplane's roll rose in 2.0, 2.5,
     /// 3.0, and 3.5 time constants at 0.56, 0.64, 0.74, and 0.85 s (#534).
     fn judge(
@@ -280,7 +281,12 @@ impl PlaneDesign {
         steps: [StepMetrics; 2],
     ) -> Action<PlaneAxisGains> {
         let tau_s = candidate.time_constant_s;
-        let design = &self.plan.design;
+        // The design's targets with the verify's rise margin: the rest as designed.
+        let design = &WingDesignConfig {
+            rise_per_time_constant: self.plan.design.rise_per_time_constant
+                * self.plan.verify_rise_margin,
+            ..self.plan.design
+        };
         if steps.iter().all(|m| meets_targets(m, tau_s, design)) {
             let mut summary = StepSummary::default();
             steps.iter().for_each(|m| summary.add(m));

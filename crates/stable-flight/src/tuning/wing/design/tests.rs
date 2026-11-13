@@ -1,6 +1,9 @@
 use assert2::{assert, check};
 
 use super::*;
+use crate::math::DEG;
+
+extern crate std;
 
 /// The plane spec's targets on a 30° roll step: 5% overshoot, rise in 2.2τ, 42 ms of clipping.
 const CONFIG: WingDesignConfig = WingDesignConfig {
@@ -253,6 +256,51 @@ fn advances_by_the_candidates_asked() {
     check!(matches!(done, WingDesignStatus::Done(_)));
     // A finished design keeps its result.
     check!(design.advance(1) == done);
+}
+
+/// The X-Plane Alia 250's roll design: its 20° step, its 15% overshoot and 0.3 s of clipping,
+/// and its 15°/s rate limit (`plane-autotune-xplane`).
+const ALIA_ROLL: WingDesignConfig = WingDesignConfig {
+    amplitude_rad: 20.0 * DEG,
+    max_rate_radps: 15.0 * DEG,
+    max_overshoot: 0.15,
+    max_saturated_s: 0.3,
+    ..CONFIG
+};
+
+/// Most that the designed roll P may vary over [`ALIA_ROLL`]'s fits, as the largest over
+/// the smallest: the 25 fits design 0.038 to 0.105 (2.8×) where a pick that needs every
+/// direction at once designs 0.005 to 0.482 (#694).
+const MAX_ROLL_P_SPREAD: f32 = 3.0;
+
+/// The X-Plane Alia's roll passes across two decades of P in a few I cells; the design takes
+/// the middle of that band, so a fit a little off moves P little. The fits span the two
+/// X-Plane runs' 3.4/s and 4.0/s of damping and about 1.6 rad/s² of control, and past them
+/// (#694).
+#[test]
+fn the_alias_roll_design_holds_its_p_over_its_fits_scatter() {
+    let mut designed_p = std::vec::Vec::new();
+    for damping_per_s in [3.0, 3.4, 3.7, 4.0, 4.4] {
+        for control_radps2 in [1.5, 1.75, 2.0, 2.25, 2.5] {
+            let model = WingModel {
+                stiffness_per_s2: 0.0,
+                damping_per_s,
+                control_radps2,
+                lag_s: 0.0,
+                delay_s: 0.0,
+                path_turn_per_s: 0.0,
+                trim_moment: -0.07,
+            };
+            let (_, status) = run(WingDesign::new(model, ALIA_ROLL));
+            let WingDesignStatus::Done(gains) = status else {
+                panic!("damping {damping_per_s} control {control_radps2}: {status:?}");
+            };
+            designed_p.push(gains.rate.p);
+        }
+    }
+    let least = designed_p.iter().copied().fold(f32::INFINITY, f32::min);
+    let most = designed_p.iter().copied().fold(0.0, f32::max);
+    check!(most / least <= MAX_ROLL_P_SPREAD, "P {least} to {most}");
 }
 
 #[test]

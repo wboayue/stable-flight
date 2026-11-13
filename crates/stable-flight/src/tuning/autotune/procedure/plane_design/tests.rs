@@ -91,6 +91,42 @@ fn fits_designs_and_verifies_a_pair() {
     check!(steps.count() == 2);
 }
 
+/// A pair finishes on a rise past the design's limit but within the verify's margin of it,
+/// where a rate loop's lag puts a first order's rise in flight, and raises P past that
+/// margin (#694).
+#[test]
+fn a_pair_rises_within_the_verify_margin() {
+    let limit = plan().design.rise_per_time_constant;
+    let margin = plan().verify_rise_margin;
+    // (row, rise in time constants, finishes)
+    let rows = [
+        ("within the design's limit", limit, true),
+        (
+            "past the limit, within the margin",
+            0.99 * limit * margin,
+            true,
+        ),
+        ("past the margin", 1.01 * limit * margin, false),
+    ];
+    for (row, rise, finishes) in rows {
+        let mut design = PlaneDesign::new(plan());
+        let candidate = designed(&mut design);
+        let tau_s = candidate.time_constant_s;
+        let step = StepMetrics {
+            rise_time_s: Some(rise * tau_s),
+            ..good_step(tau_s)
+        };
+        design.next(Decide::Held { settled: true });
+        design.next(stepped(step));
+        design.next(Decide::Held { settled: true });
+        let next = design.next(stepped(step));
+        check!(
+            matches!(next, Action::Finish { .. }) == finishes,
+            "{row}: {next:?}"
+        );
+    }
+}
+
 /// A design spread over updates computes until it has a candidate.
 #[test]
 fn computes_over_updates() {
