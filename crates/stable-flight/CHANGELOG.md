@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (behavior):** `WingDesign` takes the passing cell deepest along P plus deepest
+  along I, where it took the one deepest in every direction at once. On the X-Plane Alia 250's
+  roll that pick tied along a band of P and took its first cell, designing P 0.005 to 0.482
+  over fits 10% apart; it now designs 0.038 to 0.105. Designed P and I move on every
+  airframe (#694).
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
