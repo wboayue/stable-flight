@@ -140,10 +140,10 @@ pub enum WingDesignStatus {
 /// than allowed: the plane spec's targets. τ is bisected to the quickest at which some P and I
 /// on a coarse grid pass (16 × 12), then raised by 15% for margin; at that τ the design takes
 /// the passing P and I deepest inside what passes, counted along P and along I, the middle of
-/// what works, so a model a little off still flies. An I too small to hold the model's trim (beyond the
-/// static trim) within half the integral limit never passes: the integral would clip holding
-/// it. The airplane's pitch designed at I 0.25 against a 2 rad limit sat 1.75° off its held
-/// attitude, slowed 1.75 m/s, and its stage timed out settling (#534).
+/// what works, so a model a little off still flies. An I too small to hold the model's trim
+/// (beyond the static trim) within half the integral limit never passes: the integral would
+/// clip holding it. The airplane's pitch designed at I 0.25 against a 2 rad limit sat 1.75°
+/// off its held attitude, slowed 1.75 m/s, and its stage timed out settling (#534).
 ///
 /// Each candidate is a step of up to `step_duration_s` on the model at 250 Hz, a few thousand
 /// multiplies; a design takes up to about 1,350. [`advance`](Self::advance) runs a given number
