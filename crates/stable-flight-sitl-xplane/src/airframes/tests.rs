@@ -28,8 +28,9 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
 /// this aircraft: its limits, yaw gains (the rate feedforward to the 4th digit, worked out from
 /// the model there), and total energy control. X-Plane's own is the cruise thrust, the pusher
 /// it held level at trim (the sim works its own out from the model), and the roll and pitch
-/// rate gains and attitude time constants its plane design tuned (#537).
+/// rate gains and attitude time constants its plane design tuned (#537, #694).
 #[test]
+#[expect(clippy::approx_constant, reason = "the roll feedforward 3.14, not π")]
 fn alia250_flies_the_sim_alias_plane_side() {
     let sim = stable_flight_sim::airframes::alia250();
     let xplane = alia250();
@@ -38,20 +39,20 @@ fn alia250_flies_the_sim_alias_plane_side() {
     check!(
         ours.rate.roll
             == RateGains {
-                p: 0.0138,
-                i: 2.56,
-                ff: 2.81
+                p: 0.0632,
+                i: 0.64,
+                ff: 3.14
             }
     );
     check!(
         ours.rate.pitch
             == RateGains {
-                p: 0.482,
+                p: 1.33,
                 i: 10.0,
-                ff: 0.859
+                ff: 0.94
             }
     );
-    check!(ours.time_constant_s == Vec2::new(0.707, 0.876));
+    check!(ours.time_constant_s == Vec2::new(0.849, 0.876));
     ours.rate.roll = theirs.rate.roll;
     ours.rate.pitch = theirs.rate.pitch;
     ours.time_constant_s = theirs.time_constant_s;
