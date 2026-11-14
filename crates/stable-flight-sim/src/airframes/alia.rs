@@ -158,9 +158,12 @@ pub fn alia250() -> QuadPlaneAirframe {
     let feedforward = rate_feedforward(&model.wing, TRIM_AIRSPEED_MPS);
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: PlaneRateControllerConfig {
+            // I 1.0 holds a 20° bank against the roll into the turn: at 0.8 a step ended 1.12
+            // past and never settled. From ×3 gains the autotune's pitch converges only up to
+            // 1.0 (#694).
             roll: RateGains {
                 p: 0.47,
-                i: 0.05,
+                i: 1.0,
                 ff: feedforward.x,
             },
             // I 0.5 holds the attitude against the wing's pitch stability (Cm_α −1.48):
@@ -179,11 +182,13 @@ pub fn alia250() -> QuadPlaneAirframe {
             ..rate_defaults
         },
         // Roll: full aileron holds about 17°/s (`Cl_p` from the roll holds), so the attitude
-        // loop asks at most 15°/s and the ailerons don't clip; τ 0.6 s rises a 20° bank in
-        // 1.19 s, inside its 2.2τ (1.32 s). At PX4's 0.4 s and 70°/s the ailerons clipped
-        // 1.2 s and it overshot 15% (#392).
-        time_constant_s: Vec2::new(0.6, 0.4),
-        max_attitude_rate_radps: Vec2::new(15.0f32.to_radians(), 60.0f32.to_radians()),
+        // loop asks at most 12°/s, within the 0.8 of the throw the plane design holds a rate
+        // with: at 15°/s the roll design failed on the fitted model, and X-Plane's flipped
+        // between τ 0.6 and 1.4 s (#694). τ 0.7 s rises a 20° bank in 1.46 s, inside its 2.2τ
+        // (1.54 s); 0.65 rose too slowly for its own. At PX4's 0.4 s and 70°/s the ailerons
+        // clipped 1.2 s and it overshot 15% (#392).
+        time_constant_s: Vec2::new(0.7, 0.4),
+        max_attitude_rate_radps: Vec2::new(12.0f32.to_radians(), 60.0f32.to_radians()),
         max_bank_rad: 20.0f32.to_radians(),
         trim_airspeed_mps: TRIM_AIRSPEED_MPS,
         min_airspeed_mps: MIN_AIRSPEED_MPS,

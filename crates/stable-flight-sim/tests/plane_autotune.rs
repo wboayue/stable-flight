@@ -331,13 +331,6 @@ where
     }
 }
 
-/// How long the Alia 250's roll steps may clip, in s, in its step tests and its design. From
-/// the hold, its 20° steps at its 15°/s roll rate limit ask for nearly full aileron through its
-/// feedforward (3.4), and half of them clip for 0.13–0.29 s (measured here): 3% of margin. The
-/// design converges from every start at 0.25–0.3; below, its roll from a third of the gains
-/// finds no design, and at 0.32 and up its pitch from its own gains goes unverified (#688).
-const ALIA_ROLL_MAX_SATURATED_S: f32 = 0.3;
-
 /// The Alia 250's pitch step, in rad: its plane spec's 5° (`alia_plane.rs`). A 10° step from
 /// the hold aborts as reversed.
 const ALIA_PITCH_STEP_RAD: f32 = 5.0 * std::f32::consts::PI / 180.0;
@@ -356,12 +349,8 @@ fn step_test_plan(subject: Subject) -> [StagePlan<PlaneSide>; 4] {
         let PlaneMethod::StepTest(step_test) = &mut plan.method else {
             unreachable!("a step test's plan");
         };
-        match (subject, target) {
-            (Subject::Alia, PlaneLoop::Roll) => {
-                step_test.max_saturated_s = ALIA_ROLL_MAX_SATURATED_S;
-            }
-            (Subject::Alia, PlaneLoop::Pitch) => step_test.step.amplitude = ALIA_PITCH_STEP_RAD,
-            _ => {}
+        if let (Subject::Alia, PlaneLoop::Pitch) = (subject, target) {
+            step_test.step.amplitude = ALIA_PITCH_STEP_RAD;
         }
         plan
     })
@@ -458,7 +447,7 @@ fn a_breach_recovers_per_airframe() {
 }
 
 /// The Alia 250's largest roll overshoot, as a fraction of the step: its plane spec's
-/// (`alia_plane.rs`), where its 15°/s roll rate limit holds every roll step to a ramp.
+/// (`alia_plane.rs`), where its 12°/s roll rate limit holds every roll step to a ramp.
 const ALIA_MAX_ROLL_OVERSHOOT: f32 = 0.15;
 
 /// `subject`'s design, roll then pitch: the plane defaults, with the Alia's own steps and roll
@@ -472,10 +461,6 @@ fn design_plan(subject: Subject, config: &PlaneStabilizerConfig) -> [StagePlan<P
         match (subject, target) {
             (Subject::Alia, PlaneLoop::Roll) => {
                 design.design.max_overshoot = ALIA_MAX_ROLL_OVERSHOOT;
-                // Its step tests' clip allowance: holding the 15°/s rate limit takes 0.90–0.92
-                // of the aileron on its fits, past the design's 0.8, so every candidate's model
-                // steps clip, and from a third of its gains no design passes (#458).
-                design.design.max_saturated_s = ALIA_ROLL_MAX_SATURATED_S;
             }
             (Subject::Alia, PlaneLoop::Pitch) => {
                 design.verify.amplitude = ALIA_PITCH_STEP_RAD;

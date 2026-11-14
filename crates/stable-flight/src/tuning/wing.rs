@@ -113,13 +113,16 @@ pub enum WingStatus {
 /// The fit is least squares on every second tick: the rate's change against the angle of
 /// attack, the rate, the moment through each surface lag in a grid from 0 to 0.3 s and each
 /// delay up to 40 ms, and a constant for the trim, keeping the lag and delay that leave the
-/// least residual. The flight path's turn is fitted apart: the climb angle (pitch less angle of
+/// least residual. On a roll axis the damping and control are then refined to the rate itself,
+/// simulated from the moments: a noisy rate biases the fit on its change, which flew the X-Plane
+/// Alia 250's roll feedforward at 2.09 to 3.12 over three runs, against 2.80 to 3.17 refined
+/// (#694). The flight path's turn is fitted apart: the climb angle (pitch less angle of
 /// attack) changes at `rate − α′`, regressed on α. A wing's pitch damping and stiffness both
 /// change the moment a held rate needs, so a fit on rate and moment alone misreads the
 /// feedforward (0.53 against the Alia 250's 0.907 on the sim, #533).
 ///
 /// The window holds 750 samples (9 KB) and is fitted on the tick the excitation ends: 12 lags
-/// × 6 delays over it, about 0.2 ms on a desktop, so that tick runs long. A non-finite rate,
+/// × 6 delays over it, and on a roll axis up to 20 simulations, so that tick runs long. A non-finite rate,
 /// moment, or angle of attack is recorded as the last finite one.
 ///
 /// # Examples
@@ -299,7 +302,13 @@ fn fit(window: &Window) -> Option<WingModel> {
             }
         }
     }
-    let (fit, lag_s, delay) = best?;
+    let (mut fit, lag_s, delay) = best?;
+    if !with_alpha {
+        lag_through(window, lag_s, sample_s, &mut surface);
+        let refined = refine(window, &surface, delay, sample_s, &fit);
+        fit.terms[1] = -refined.damping_per_s;
+        fit.terms[2] = refined.control_radps2;
+    }
     let moments = &window.moments[..window.len];
     let trim_moment = moments.iter().sum::<f32>() / moments.len() as f32;
     let path_turn_per_s = if with_alpha {
@@ -383,6 +392,173 @@ fn fit_at(
         terms,
         residual: libm::sqrt(sum_squares / count),
     })
+}
+
+/// A roll axis's terms, simulated: `rate′ = −damping·rate + control·surface + constant` from
+/// `start_radps` on the sample before the fit's first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RollTerms {
+    damping_per_s: f64,
+    control_radps2: f64,
+    constant_radps2: f64,
+    start_radps: f64,
+}
+
+impl RollTerms {
+    /// The terms of a least squares `fit` at `delay`, starting from the window's rate.
+    fn from_fit(fit: &Fit, window: &Window, delay: usize) -> Self {
+        Self {
+            damping_per_s: -fit.terms[1],
+            control_radps2: fit.terms[2],
+            constant_radps2: fit.terms[3],
+            start_radps: f64::from(window.rates_radps[delay]),
+        }
+    }
+
+    fn as_vector(&self) -> SVector<f64, ROLL_TERMS> {
+        SVector::<f64, ROLL_TERMS>::new(
+            self.damping_per_s,
+            self.control_radps2,
+            self.constant_radps2,
+            self.start_radps,
+        )
+    }
+
+    fn from_vector(terms: &SVector<f64, ROLL_TERMS>) -> Self {
+        Self {
+            damping_per_s: terms[0],
+            control_radps2: terms[1],
+            constant_radps2: terms[2],
+            start_radps: terms[3],
+        }
+    }
+}
+
+/// Terms of a roll axis's simulated fit: damping, control, a constant, and the starting rate.
+const ROLL_TERMS: usize = 4;
+
+/// Most refinement steps.
+const MAX_REFINE_STEPS: usize = 20;
+
+/// The refinement's damping on a step, as a share of the curvature, to start; a step that
+/// doesn't lower the residual raises it tenfold, one that does lowers it tenfold.
+const REFINE_DAMPING: f64 = 1e-3;
+
+/// The refinement gives up once its damping passes this: no step lowers the residual.
+const MAX_REFINE_DAMPING: f64 = 1e6;
+
+/// The roll terms that leave the least RMS difference between the window's rate and the one
+/// they simulate from its moments at `fit`'s lag and delay, refined from `fit` by damped
+/// Gauss-Newton steps (Levenberg-Marquardt). The least squares on the rate's change reads a
+/// noisy rate's damping low: the X-Plane Alia 250's at 4.2/s where its rate refines to 7.2/s
+/// (#694).
+fn refine(
+    window: &Window,
+    surface: &[f32; WINDOW_CAPACITY],
+    delay: usize,
+    sample_s: f32,
+    fit: &Fit,
+) -> RollTerms {
+    let mut terms = RollTerms::from_fit(fit, window, delay);
+    let mut slopes = Slopes::zeros();
+    let mut residual = simulate(window, surface, delay, sample_s, &terms, Some(&mut slopes));
+    let mut damping = REFINE_DAMPING;
+    for _ in 0..MAX_REFINE_STEPS {
+        if damping > MAX_REFINE_DAMPING {
+            break;
+        }
+        let mut curvature = slopes.curvature;
+        for k in 0..ROLL_TERMS {
+            curvature[(k, k)] *= 1.0 + damping;
+        }
+        let Some(step) = curvature.lu().solve(&slopes.gradient) else {
+            break;
+        };
+        let tried = RollTerms::from_vector(&(terms.as_vector() + step));
+        let mut tried_slopes = Slopes::zeros();
+        let tried_residual = simulate(
+            window,
+            surface,
+            delay,
+            sample_s,
+            &tried,
+            Some(&mut tried_slopes),
+        );
+        if tried_residual < residual {
+            (terms, slopes, residual) = (tried, tried_slopes, tried_residual);
+            damping /= 10.0;
+        } else {
+            damping *= 10.0;
+        }
+    }
+    terms
+}
+
+/// A simulated fit's first-order slopes: `JᵀJ` and `Jᵀe` of the rate's error `e` against
+/// each term's effect on the simulated rate `J`.
+struct Slopes {
+    curvature: SMatrix<f64, ROLL_TERMS, ROLL_TERMS>,
+    gradient: SVector<f64, ROLL_TERMS>,
+}
+
+impl Slopes {
+    fn zeros() -> Self {
+        Self {
+            curvature: SMatrix::zeros(),
+            gradient: SVector::zeros(),
+        }
+    }
+}
+
+/// The RMS difference, in rad/s, between the window's rate and the rate `terms` simulate from
+/// `surface` `delay` samples late, over the samples [`fit_at`] fits; with `slopes`, also each
+/// term's effect on it. Each step takes the rate between two samples, as the least squares
+/// does: `rate_k = rate_(k−1) + sample·(−damping·(rate_k + rate_(k−1))/2 + control·surface +
+/// constant)`. Infinite when the simulation runs away.
+fn simulate(
+    window: &Window,
+    surface: &[f32; WINDOW_CAPACITY],
+    delay: usize,
+    sample_s: f32,
+    terms: &RollTerms,
+    mut slopes: Option<&mut Slopes>,
+) -> f64 {
+    let h = f64::from(sample_s);
+    let half_damping = 0.5 * h * terms.damping_per_s;
+    // rate_k = carry·rate_(k−1) + gain·(control·surface + constant), and their slopes in damping.
+    let carry = (1.0 - half_damping) / (1.0 + half_damping);
+    let gain = h / (1.0 + half_damping);
+    let carry_per_damping = -h / ((1.0 + half_damping) * (1.0 + half_damping));
+    let gain_per_damping = -0.5 * h * h / ((1.0 + half_damping) * (1.0 + half_damping));
+    let first = delay + 1;
+    let mut rate = terms.start_radps;
+    // The simulated rate's slope in damping, control, constant, and starting rate.
+    let mut effect = SVector::<f64, ROLL_TERMS>::new(0.0, 0.0, 0.0, 1.0);
+    let mut sum_squares = 0.0f64;
+    for k in first..window.len {
+        let moment = f64::from(surface[k - delay]);
+        let push = terms.control_radps2 * moment + terms.constant_radps2;
+        effect = SVector::<f64, ROLL_TERMS>::new(
+            carry * effect[0] + carry_per_damping * rate + gain_per_damping * push,
+            carry * effect[1] + gain * moment,
+            carry * effect[2] + gain,
+            carry * effect[3],
+        );
+        rate = carry * rate + gain * push;
+        let error = f64::from(window.rates_radps[k]) - rate;
+        sum_squares += error * error;
+        if let Some(slopes) = slopes.as_deref_mut() {
+            slopes.curvature += effect * effect.transpose();
+            slopes.gradient += effect * error;
+        }
+    }
+    let count = window.len.saturating_sub(first).max(1) as f64;
+    let residual = libm::sqrt(sum_squares / count);
+    if residual.is_finite() {
+        residual
+    } else {
+        f64::INFINITY
+    }
 }
 
 /// The flight path's turn per rad of angle of attack, in 1/s: the climb angle changes at
