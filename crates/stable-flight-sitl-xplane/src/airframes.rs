@@ -145,6 +145,7 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 /// assert_eq!(airframe.mapping.motors[..5], [Some(1), Some(0), Some(2), Some(3), Some(4)]);
 /// assert_eq!(airframe.stabilizer.plane.trim_airspeed_mps, 45.0);
 /// ```
+#[expect(clippy::approx_constant, reason = "the roll feedforward 3.14, not π")]
 pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>> {
     let plane_rate = PlaneRateControllerConfig::default();
     Airframe {
@@ -188,21 +189,21 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
             hover: alia250_hover_stabilizer(),
             plane: PlaneStabilizerConfig {
                 rate: PlaneRateControllerConfig {
-                    // The plane design's in X-Plane, the median of three runs' gains
-                    // (`plane-autotune-xplane`): its fits read a roll damped 3.7–6.8/s and a
-                    // stiff, lightly damped pitch (5.7–7.3/s², 0.7–1.6/s), so the integrators
-                    // carry most of the hold. Roll rate steps settle in 0.40–0.54 s,
-                    // 0.06–0.15 over; pitch rate steps reach 0.74–0.82 of the step where the
-                    // hand tune's held 0.50 (#537).
+                    // The plane design's in X-Plane at the 12°/s roll rate limit, the median of
+                    // three runs' gains (`plane-autotune-xplane`): its fits read a roll damped
+                    // 7.3–9.3/s (feedforward 3.13–3.15) and a stiff, lightly damped pitch
+                    // (7.2–7.7/s², 0.95–1.17/s), so the integrators carry most of the hold. Roll
+                    // P is every run's; its I is two runs', its feedforward and time constant
+                    // the third's, whose pitch set this is (#694).
                     roll: RateGains {
-                        p: 0.0138,
-                        i: 2.56,
-                        ff: 2.81,
+                        p: 0.0632,
+                        i: 0.64,
+                        ff: 3.14,
                     },
                     pitch: RateGains {
-                        p: 0.482,
+                        p: 1.33,
                         i: 10.0,
-                        ff: 0.859,
+                        ff: 0.94,
                     },
                     // The sim Alia's: its feedforward from the yaw damping and rudder power
                     // fitted to X-Plane's rudder holds (#458).
@@ -213,7 +214,7 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     },
                     ..plane_rate
                 },
-                time_constant_s: Vec2::new(0.707, 0.876),
+                time_constant_s: Vec2::new(0.849, 0.876),
                 max_attitude_rate_radps: Vec2::new(12.0f32.to_radians(), 60.0f32.to_radians()),
                 max_bank_rad: 20.0f32.to_radians(),
                 trim_airspeed_mps: 45.0,
