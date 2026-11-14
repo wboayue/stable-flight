@@ -52,8 +52,8 @@ Part of the [architecture overview](../../architecture.md).
     band's first cell: P 0.005 to 0.482 over fits 10% apart, against 0.038 to 0.105 counted
     per axis (#694). The moment is held 20% short of full throw, and I must hold the fit's
     trim within half the integral limit (the airplane's pitch at I 0.25 couldn't, sat 1.75°
-    off its hold, and its stage timed out settling). About 1,350 candidates, four per update. A stiff axis fitted with
-    damping at or below 0 is designed undamped, with no FF: the trade-off in the fit carries a
+    off its hold, and its stage timed out settling). About 1,350 candidates, four per update.
+    A stiff axis fitted with damping at or below 0 is designed undamped, with no FF: the trade-off in the fit carries a
     barely damped pitch past 0 under a high P (the sim eXplora's from 1.63/s at P 0.008 to
     −0.62/s at 0.24; RealFlight's from ×3 gains to −7.6/s), and the design on the floored model
     meets the spec from ×3 to ×5 gains on the sim and from ×3 in RealFlight. Identifying on
@@ -66,8 +66,8 @@ Part of the [architecture overview](../../architecture.md).
     at the bare limit the X-Plane Alia's pitch failed pairs at 2.21τ, 2.36τ, and 2.22τ while P
     went from 0.8 to 3.66 and the rise didn't change (#694). A sag raises I by half, a slow
     rise P a grid step (a slower τ rose slower still: 2.0τ to 3.5τ from 0.56 to 0.85 s), an
-    overshoot or clip τ by 15%; eight pairs, then the stage fails. An overshoot that keeps more than
-    half of itself to the step's end holds past the target rather than swinging past it, and
+    overshoot or clip τ by 15%; eight pairs, then the stage fails. An overshoot that keeps
+    more than half of itself to the step's end holds past the target rather than swinging past it, and
     raises I: a wing that rolls into its turns needs a steady aileron in a bank
     the fit from level flight doesn't see, and a slower τ only widens the error that holds it
     (RealFlight's Titan Cobra ended 30° steps 1.09–1.13 past; the sim quadplane at four times
