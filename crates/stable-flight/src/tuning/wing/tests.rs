@@ -171,6 +171,45 @@ fn recovers_a_wing_axis() {
     }
 }
 
+/// The X-Plane Alia 250's roll windows, three plane autotunes at 45 m/s (#694): per window,
+/// each tick's roll rate and the moment commanded on the tick before.
+fn xplane_alia_roll_windows() -> [Vec<(f32, f32)>; 3] {
+    let mut windows: [Vec<(f32, f32)>; 3] = core::array::from_fn(|_| Vec::new());
+    let fixture = include_str!("xplane_alia_roll_windows.csv");
+    for line in fixture.lines().filter(|line| !line.starts_with('#')) {
+        let fields: Vec<&str> = line.split(',').collect();
+        let window: usize = fields[0].parse().expect("window");
+        let rate_radps = fields[1].parse().expect("rate");
+        let last_moment = fields[2].parse().expect("moment");
+        windows[window].push((rate_radps, last_moment));
+    }
+    windows
+}
+
+/// The model a probe fits to the recorded `ticks`.
+fn fit_recorded(ticks: &[(f32, f32)]) -> WingModel {
+    let mut window = Window::new();
+    for &(rate_radps, last_moment) in ticks {
+        window.record(DT, rate_radps, last_moment, 0.0);
+    }
+    fit(&window).expect("a fit")
+}
+
+/// Most a roll fit's feedforward may differ over the X-Plane Alia's three windows, as a ratio:
+/// they fit 2.80 to 3.17 (1.13), and on the rate's change alone 2.09 to 3.12 (1.49) (#694).
+const MAX_ROLL_FEEDFORWARD_SPREAD: f32 = 1.2;
+
+#[test]
+fn the_xplane_alias_roll_fits_one_feedforward_over_three_runs() {
+    let feedforwards = xplane_alia_roll_windows().map(|ticks| fit_recorded(&ticks).feedforward());
+    let low = feedforwards.iter().copied().fold(f32::INFINITY, f32::min);
+    let high = feedforwards.iter().copied().fold(0.0, f32::max);
+    check!(
+        high / low <= MAX_ROLL_FEEDFORWARD_SPREAD,
+        "{feedforwards:?}"
+    );
+}
+
 #[test]
 fn a_roll_axis_fits_no_stiffness() {
     let model = fitted(identify(ROLL, false));

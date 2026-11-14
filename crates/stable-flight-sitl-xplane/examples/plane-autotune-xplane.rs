@@ -129,11 +129,8 @@ const HOME_OVERFLY_M: f32 = 1500.0;
 /// `tests/alia_plane.rs`). On the sim, a 10° step from the hold aborts as reversed.
 const ALIA_PITCH_STEP_RAD: f32 = 5.0 * std::f32::consts::PI / 180.0;
 /// The Alia's largest roll overshoot, as a fraction of the step: its plane spec's, where its
-/// 15°/s roll rate limit holds every roll step to a ramp (sim: 14% measured).
+/// 12°/s roll rate limit holds every roll step to a ramp (sim: 13.7% measured).
 const ALIA_MAX_ROLL_OVERSHOOT: f32 = 0.15;
-/// How long the Alia's roll steps may clip, in s, in its step tests and its design, as
-/// `stable-flight-sim`'s `tests/plane_autotune.rs` has it, with the measurements behind it.
-const ALIA_ROLL_MAX_SATURATED_S: f32 = 0.3;
 
 /// Autotune of the Alia 250's cruise side in X-Plane.
 #[derive(Parser)]
@@ -210,17 +207,14 @@ fn plan(args: &Args, config: &PlaneStabilizerConfig) -> Vec<StagePlan<PlaneSide>
 }
 
 /// The design of `target` from `config`: the plane default, with the Alia's roll overshoot and
-/// clip and pitch step.
+/// pitch step.
 fn design_plan(target: PlaneLoop, config: &PlaneStabilizerConfig) -> StagePlan<PlaneSide> {
     let mut plan = StagePlan::plane_design(target, config);
     let PlaneMethod::Design(design) = &mut plan.method else {
         unreachable!("a design's plan");
     };
     match target {
-        PlaneLoop::Roll => {
-            design.design.max_overshoot = ALIA_MAX_ROLL_OVERSHOOT;
-            design.design.max_saturated_s = ALIA_ROLL_MAX_SATURATED_S;
-        }
+        PlaneLoop::Roll => design.design.max_overshoot = ALIA_MAX_ROLL_OVERSHOOT,
         PlaneLoop::Pitch => {
             design.verify.amplitude = ALIA_PITCH_STEP_RAD;
             design.design.amplitude_rad = ALIA_PITCH_STEP_RAD;
@@ -230,17 +224,14 @@ fn design_plan(target: PlaneLoop, config: &PlaneStabilizerConfig) -> StagePlan<P
     plan
 }
 
-/// The step test of `target` on `config`: the plane default, with the Alia's roll clip and
-/// pitch step.
+/// The step test of `target` on `config`: the plane default, with the Alia's pitch step.
 fn step_test_plan(target: PlaneLoop, config: &PlaneStabilizerConfig) -> StagePlan<PlaneSide> {
     let mut plan = StagePlan::plane_step_test(target, config);
     let PlaneMethod::StepTest(step_test) = &mut plan.method else {
         unreachable!("a step test's plan");
     };
-    match target {
-        PlaneLoop::Roll => step_test.max_saturated_s = ALIA_ROLL_MAX_SATURATED_S,
-        PlaneLoop::Pitch => step_test.step.amplitude = ALIA_PITCH_STEP_RAD,
-        _ => {}
+    if target == PlaneLoop::Pitch {
+        step_test.step.amplitude = ALIA_PITCH_STEP_RAD;
     }
     plan
 }

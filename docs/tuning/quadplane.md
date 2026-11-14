@@ -132,8 +132,10 @@ climb, then tune on the model and pin the X-Plane airframe to it.
   elevator and fell into a stall cycle to the ground once TECS damping or pitch P rose 1.5×.
   15° holds with twice either.
 - **Roll within the ailerons:** full aileron gives about 17°/s (`Cl_p` from the roll holds);
-  asking 70°/s clipped them and overshot 15%. `PSTAB_RMAX_X` 15°/s and `PSTAB_TC_X` 0.6 s rise
-  a 20° bank in 1.2 s.
+  asking 70°/s clipped them and overshot 15%. The plane design holds a rate within 0.8 of the
+  throw, about 13.6°/s here: at 15°/s X-Plane's roll design flipped between τ 0.6 and 1.4 s
+  over three runs (#694). `PSTAB_RMAX_X` 12°/s and `PSTAB_TC_X` 0.7 s rise a 20° bank in
+  1.46 s, with `PSTAB_RLL_I` 1.0 to hold the roll into the turn.
 
 **Worked example (Alia 250 plane autotune in X-Plane, #537):** `plane-autotune-xplane`
 (Oceano, calm, `flights/alia_plane_tune.csv`) holds 6 km offshore at 300 m and trim 45 m/s,
@@ -141,8 +143,7 @@ then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks
 - **Roll into the bank:** the X-Plane Alia rolls further in once banked, holding 0.13–0.27 of
   opposite aileron at 20°. Its roll steps held past the target until the design doubled I on
   each such pair; the sim Alia, its roll moment from yaw rate (`c_roll_r`) fitted to that
-  aileron (#458), reproduces it. Holding its 15°/s roll rate limit takes more aileron than the
-  design's 0.8, so its roll design may clip for 0.3 s, as its roll step tests may.
+  aileron (#458), reproduces it.
 - **Spread over runs:** three design runs fit roll damping 3.7–6.8/s and a stiff, lightly
   damped pitch (5.7–7.3/s², 0.7–1.6/s), so pitch I lands at 10–20 against the sim's 0.7. The
   airframe flies each gain's median, which falls on one run's roll set and another's pitch

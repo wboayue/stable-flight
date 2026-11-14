@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (behavior):** `airframes::alia250()`'s plane roll rate limit is 12°/s
+  (`PSTAB_RMAX_X`, was 15°/s): within the 0.8 of the aileron the plane design holds a rate
+  with, where at 15°/s its roll design flipped between τ 0.6 and 1.4 s over three runs (#694).
+- `plane-autotune-xplane` holds the Alia's roll design and step tests to the plane default's
+  clip: at the 12°/s roll rate limit the sim Alia's roll steps don't clip (#694).
+
 ## [0.3.0] - 2026-11-12
 
 ### Added
