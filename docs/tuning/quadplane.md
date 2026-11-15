@@ -149,8 +149,12 @@ then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks
   2.1–3.1. Refining the roll terms against the simulated rate reads the same windows 2.8–3.2,
   and three new runs at `PSTAB_RMAX_X` 12°/s 3.13–3.15.
 - **Spread over runs:** the fits read roll damping 7.3–9.3/s and a stiff, lightly damped pitch
-  (7.2–7.7/s², 0.95–1.17/s), so pitch I lands on the grid's top, 10 (20 on one run's doubled
-  overshoot pair). The airframe flies each gain's median: roll P 0.0632 I 0.64 FF 3.14,
+  (7.2–7.7/s², 0.95–1.17/s), so pitch I lands on the grid's top, 10. The pitch fits straddle
+  the damping (about 1.1/s) where the design moves one P cell, 0.8 or 1.33; one run's verify
+  then took a step each past its limits (an overshoot of 0.07, a rise of 2.43τ) and doubled I
+  and raised P to 2.21. Across P 0.8–2.21 and I 10–20 the verified pitch steps rose in
+  1.82–1.90 s and overshot at most 0.04, so the spread in pitch gains doesn't reach the
+  response. The airframe flies each gain's median: roll P 0.0632 I 0.64 FF 3.14,
   `PSTAB_TC_X` 0.849 s; pitch P 1.33 I 10 FF 0.94, `PSTAB_TC_Y` 0.876 s.
 - **Accepted costs:** the pitch rate step bounces 0.29 and doesn't settle within the window,
   and a 20° bank rises 0.2 s slower than the hand tune's: the roll rate limit holds the

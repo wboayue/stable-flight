@@ -348,6 +348,57 @@ fn the_alias_12_degps_roll_design_holds_its_gains_over_its_fits_scatter() {
     check!(i_spread <= MAX_ROLL_12_I_SPREAD, "{designed:?}");
 }
 
+/// The X-Plane Alia 250's pitch design: its 5° step at the 60°/s pitch rate limit.
+const ALIA_PITCH: WingDesignConfig = WingDesignConfig {
+    amplitude_rad: 5.0 * DEG,
+    max_rate_radps: 60.0 * DEG,
+    ..CONFIG
+};
+
+/// Most that [`ALIA_PITCH`]'s designed P may vary over its fits, as the largest over the
+/// smallest: one step of the P grid (0.8 to 1.33, 1.66×), the fits straddling the damping
+/// where the pick moves a cell.
+const MAX_PITCH_P_SPREAD: f32 = 1.7;
+
+/// The X-Plane Alia's stiff, lightly damped pitch designs within one P cell and one I over
+/// the scatter of three runs' fits, and past it: stiffness 7.16–7.66/s², damping
+/// 0.95–1.17/s, control 1.09–1.17 rad/s², a 1.05–1.09/s path turn. The steps that verified
+/// them rose in 1.82–1.90 s and overshot at most 0.04 (#694).
+#[test]
+fn the_alias_pitch_design_holds_one_p_cell_over_its_fits_scatter() {
+    let mut designed = std::vec::Vec::new();
+    for stiffness_per_s2 in [7.1, 7.35, 7.6] {
+        for damping_per_s in [0.95, 1.05, 1.15] {
+            for control_radps2 in [1.09, 1.13, 1.17] {
+                let model = WingModel {
+                    stiffness_per_s2,
+                    damping_per_s,
+                    control_radps2,
+                    lag_s: 0.0,
+                    delay_s: 0.008,
+                    path_turn_per_s: 1.07,
+                    trim_moment: 0.22,
+                };
+                let (_, status) = run(WingDesign::new(model, ALIA_PITCH));
+                let WingDesignStatus::Done(gains) = status else {
+                    panic!("{model:?}: {status:?}");
+                };
+                designed.push((gains.rate.p, gains.rate.i));
+            }
+        }
+    }
+    let least_p = designed
+        .iter()
+        .map(|&(p, _)| p)
+        .fold(f32::INFINITY, f32::min);
+    let most_p = designed.iter().map(|&(p, _)| p).fold(0.0, f32::max);
+    check!(most_p / least_p <= MAX_PITCH_P_SPREAD, "{designed:?}");
+    check!(
+        designed.iter().all(|&(_, i)| i == designed[0].1),
+        "{designed:?}"
+    );
+}
+
 #[test]
 fn meets_targets_checks_each() {
     let good = StepMetrics {
