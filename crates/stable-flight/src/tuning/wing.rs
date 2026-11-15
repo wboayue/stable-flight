@@ -113,17 +113,18 @@ pub enum WingStatus {
 /// The fit is least squares on every second tick: the rate's change against the angle of
 /// attack, the rate, the moment through each surface lag in a grid from 0 to 0.3 s and each
 /// delay up to 40 ms, and a constant for the trim, keeping the lag and delay that leave the
-/// least residual. On a roll axis the damping and control are then refined to the rate itself,
-/// simulated from the moments: a noisy rate biases the fit on its change, which flew the X-Plane
-/// Alia 250's roll feedforward at 2.09 to 3.12 over three runs, against 2.80 to 3.17 refined
-/// (#694). The flight path's turn is fitted apart: the climb angle (pitch less angle of
+/// least residual. On an axis fitted without angle of attack (roll) the damping and control are
+/// then refined to the rate itself, simulated from the moments: a noisy rate biases the fit on
+/// its change, which fitted the X-Plane Alia 250's roll feedforward at 2.09 to 3.12 over three
+/// runs, against 2.80 to 3.17 refined (#694). The flight path's turn is fitted apart: the climb angle (pitch less angle of
 /// attack) changes at `rate − α′`, regressed on α. A wing's pitch damping and stiffness both
 /// change the moment a held rate needs, so a fit on rate and moment alone misreads the
 /// feedforward (0.53 against the Alia 250's 0.907 on the sim, #533).
 ///
 /// The window holds 750 samples (9 KB) and is fitted on the tick the excitation ends: 12 lags
-/// × 6 delays over it, and on a roll axis up to 20 simulations, so that tick runs long. A non-finite rate,
-/// moment, or angle of attack is recorded as the last finite one.
+/// × 6 delays over it and, without angle of attack, up to 20 simulations: about 0.25 ms on a
+/// desktop, so that tick runs long. A non-finite rate, moment, or angle of attack is recorded
+/// as the last finite one.
 ///
 /// # Examples
 ///
@@ -304,6 +305,7 @@ fn fit(window: &Window) -> Option<WingModel> {
     }
     let (mut fit, lag_s, delay) = best?;
     if !with_alpha {
+        // The sweep left `surface` at the last lag: rebuild the best one's.
         lag_through(window, lag_s, sample_s, &mut surface);
         let refined = refine(window, &surface, delay, sample_s, &fit);
         fit.terms[1] = -refined.damping_per_s;
@@ -513,8 +515,8 @@ impl Slopes {
 /// The RMS difference, in rad/s, between the window's rate and the rate `terms` simulate from
 /// `surface` `delay` samples late, over the samples [`fit_at`] fits; with `slopes`, also each
 /// term's effect on it. Each step takes the rate between two samples, as the least squares
-/// does: `rate_k = rate_(k−1) + sample·(−damping·(rate_k + rate_(k−1))/2 + control·surface +
-/// constant)`. Infinite when the simulation runs away.
+/// does: `rate_k = rate_(k−1) + sample·(−damping·(rate_k + rate_(k−1))/2 +
+/// control·surface + constant)`. Infinite when the simulation runs away.
 fn simulate(
     window: &Window,
     surface: &[f32; WINDOW_CAPACITY],
@@ -525,7 +527,8 @@ fn simulate(
 ) -> f64 {
     let h = f64::from(sample_s);
     let half_damping = 0.5 * h * terms.damping_per_s;
-    // rate_k = carry·rate_(k−1) + gain·(control·surface + constant), and their slopes in damping.
+    // rate_k = carry·rate_(k−1) + gain·(control·surface + constant), and their slopes in
+    // damping.
     let carry = (1.0 - half_damping) / (1.0 + half_damping);
     let gain = h / (1.0 + half_damping);
     let carry_per_damping = -h / ((1.0 + half_damping) * (1.0 + half_damping));

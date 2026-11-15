@@ -10,6 +10,8 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+# Test fixtures, read only by unit tests.
+exclude = ["src/**/*.csv"]
 
 [dependencies]
 # f32 math that `core` lacks (`powf`).

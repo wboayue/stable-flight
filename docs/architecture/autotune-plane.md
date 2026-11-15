@@ -42,7 +42,7 @@ Part of the [architecture overview](../../architecture.md).
     airspeed): from the ground track, an 8 m/s crosswind halved the eXplora's ground speed
     against its airspeed, its fit lost the stiffness, and all its wind rows failed (#534). A
     stiff wing's α follows its rate, so stiffness and damping trade off in the fit with
-    little change in its response. A roll fit is refined to the rate itself, simulated from
+    little change in its response. A fit without α (roll) is refined to the rate itself, simulated from
     the moments at the fitted lag and delay: X-Plane's noisy rate biased the fit on its change,
     and the Alia's roll FF read 2.09–3.12 over three runs, against 2.80–3.17 refined. Picking
     the lag by the simulated rate tightened X-Plane's to 2.94–3.17 but took the sim eXplora's
