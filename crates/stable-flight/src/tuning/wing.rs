@@ -115,14 +115,14 @@ pub enum WingStatus {
 /// delay up to 40 ms, and a constant for the trim, keeping the lag and delay that leave the
 /// least residual. On an axis fitted without angle of attack (roll) the damping and control are
 /// then refined to the rate itself, simulated from the moments: a noisy rate biases the fit on
-/// its change, which fitted the X-Plane Alia 250's roll feedforward at 2.09 to 3.12 over three
-/// runs, against 2.80 to 3.17 refined (#694). The flight path's turn is fitted apart: the climb angle (pitch less angle of
-/// attack) changes at `rate − α′`, regressed on α. A wing's pitch damping and stiffness both
+/// its change, which fitted the X-Plane Alia 250's three recorded roll windows' feedforward at
+/// 2.09 to 3.12, against 2.80 to 3.17 refined (#694). The flight path's turn is fitted apart:
+/// the climb angle (pitch less angle of attack) changes at `rate − α′`, regressed on α. A wing's pitch damping and stiffness both
 /// change the moment a held rate needs, so a fit on rate and moment alone misreads the
 /// feedforward (0.53 against the Alia 250's 0.907 on the sim, #533).
 ///
 /// The window holds 750 samples (9 KB) and is fitted on the tick the excitation ends: 12 lags
-/// × 6 delays over it and, without angle of attack, up to 20 simulations: about 0.25 ms on a
+/// × 6 delays over it and, without angle of attack, up to 21 simulations: about 0.25 ms on a
 /// desktop, so that tick runs long. A non-finite rate, moment, or angle of attack is recorded
 /// as the last finite one.
 ///
@@ -307,7 +307,8 @@ fn fit(window: &Window) -> Option<WingModel> {
     if !with_alpha {
         // The sweep left `surface` at the last lag: rebuild the best one's.
         lag_through(window, lag_s, sample_s, &mut surface);
-        let refined = refine(window, &surface, delay, sample_s, &fit);
+        let refined = refine_roll_terms(window, &surface, delay, sample_s, &fit);
+        // The constant and starting rate only absorb the trim and the window's first rate.
         fit.terms[1] = -refined.damping_per_s;
         fit.terms[2] = refined.control_radps2;
     }
@@ -454,7 +455,7 @@ const MAX_REFINE_DAMPING: f64 = 1e6;
 /// Gauss-Newton steps (Levenberg-Marquardt). The least squares on the rate's change reads a
 /// noisy rate's damping low: the X-Plane Alia 250's at 4.2/s where its rate refines to 7.2/s
 /// (#694).
-fn refine(
+fn refine_roll_terms(
     window: &Window,
     surface: &[f32; WINDOW_CAPACITY],
     delay: usize,

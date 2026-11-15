@@ -30,20 +30,18 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
 /// it held level at trim (the sim works its own out from the model), and the roll and pitch
 /// rate gains and attitude time constants its plane design tuned (#537, #694).
 #[test]
-#[expect(clippy::approx_constant, reason = "the roll feedforward 3.14, not π")]
 fn alia250_flies_the_sim_alias_plane_side() {
     let sim = stable_flight_sim::airframes::alia250();
     let xplane = alia250();
 
     let (mut ours, theirs) = (xplane.stabilizer.plane, sim.stabilizer.plane);
-    check!(
-        ours.rate.roll
-            == RateGains {
-                p: 0.0632,
-                i: 0.64,
-                ff: 3.14
-            }
-    );
+    #[expect(clippy::approx_constant, reason = "a fitted feedforward, not π")]
+    let roll = RateGains {
+        p: 0.0632,
+        i: 0.64,
+        ff: 3.14,
+    };
+    check!(ours.rate.roll == roll);
     check!(
         ours.rate.pitch
             == RateGains {

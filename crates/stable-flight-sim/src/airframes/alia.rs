@@ -185,7 +185,7 @@ pub fn alia250() -> QuadPlaneAirframe {
         // loop asks at most 12°/s, within the 0.8 of the throw the plane design holds a rate
         // with: at 15°/s the roll design failed on the fitted model, and X-Plane's flipped
         // between τ 0.6 and 1.4 s (#694). τ 0.7 s rises a 20° bank in 1.46 s, inside its 2.2τ
-        // (1.54 s); 0.65 rose too slowly for its own. At PX4's 0.4 s and 70°/s the ailerons
+        // (1.54 s); at 0.65 it rose past its own 2.2τ (1.43 s). At PX4's 0.4 s and 70°/s the ailerons
         // clipped 1.2 s and it overshot 15% (#392).
         time_constant_s: Vec2::new(0.7, 0.4),
         max_attitude_rate_radps: Vec2::new(12.0f32.to_radians(), 60.0f32.to_radians()),

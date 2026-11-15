@@ -145,7 +145,6 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 /// assert_eq!(airframe.mapping.motors[..5], [Some(1), Some(0), Some(2), Some(3), Some(4)]);
 /// assert_eq!(airframe.stabilizer.plane.trim_airspeed_mps, 45.0);
 /// ```
-#[expect(clippy::approx_constant, reason = "the roll feedforward 3.14, not π")]
 pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>> {
     let plane_rate = PlaneRateControllerConfig::default();
     Airframe {
@@ -200,7 +199,7 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     roll: RateGains {
                         p: 0.0632,
                         i: 0.64,
-                        ff: 3.14,
+                        ff: ALIA_ROLL_FEEDFORWARD,
                     },
                     pitch: RateGains {
                         p: 1.33,
@@ -232,6 +231,11 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
         mapping: ALIA_MAPPING,
     }
 }
+
+/// The roll rate feedforward `alia250()`'s plane design reads in X-Plane: the median of three
+/// runs' 3.13–3.15 (#694).
+#[expect(clippy::approx_constant, reason = "a fitted feedforward, not π")]
+const ALIA_ROLL_FEEDFORWARD: f32 = 3.14;
 
 /// The plane side's slowest, and where the lift ramp starts: the sim `alia250()`'s.
 const ALIA_MIN_AIRSPEED_MPS: f32 = 40.0;
