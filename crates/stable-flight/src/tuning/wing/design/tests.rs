@@ -1,7 +1,10 @@
 use assert2::{assert, check};
 
 use super::*;
+use crate::Vec2;
 use crate::math::DEG;
+use crate::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
+use crate::tuning::autotune::PlaneDesignPlan;
 
 extern crate std;
 
@@ -298,9 +301,14 @@ fn the_alias_roll_design_holds_its_p_over_its_fits_scatter() {
             designed_p.push(gains.rate.p);
         }
     }
-    let least = designed_p.iter().copied().fold(f32::INFINITY, f32::min);
-    let most = designed_p.iter().copied().fold(0.0, f32::max);
-    check!(most / least <= MAX_ROLL_P_SPREAD, "P {least} to {most}");
+    check!(spread(&designed_p) <= MAX_ROLL_P_SPREAD, "P {designed_p:?}");
+}
+
+/// The largest of `values` over the smallest.
+fn spread(values: &[f32]) -> f32 {
+    let least = values.iter().copied().fold(f32::INFINITY, f32::min);
+    let most = values.iter().copied().fold(0.0, f32::max);
+    most / least
 }
 
 /// The X-Plane Alia 250's roll design as it flies: its 12°/s rate limit, at the default clip.
@@ -338,65 +346,58 @@ fn the_alias_12_degps_roll_design_holds_its_gains_over_its_fits_scatter() {
             designed.push((gains.rate.p, gains.rate.i));
         }
     }
-    let spread = |values: std::vec::Vec<f32>| {
-        let least = values.iter().copied().fold(f32::INFINITY, f32::min);
-        values.iter().copied().fold(0.0, f32::max) / least
-    };
-    let p_spread = spread(designed.iter().map(|&(p, _)| p).collect());
-    let i_spread = spread(designed.iter().map(|&(_, i)| i).collect());
-    check!(p_spread <= MAX_ROLL_12_P_SPREAD, "{designed:?}");
-    check!(i_spread <= MAX_ROLL_12_I_SPREAD, "{designed:?}");
+    let (designed_p, designed_i): (std::vec::Vec<f32>, std::vec::Vec<f32>) =
+        designed.iter().copied().unzip();
+    check!(spread(&designed_p) <= MAX_ROLL_12_P_SPREAD, "{designed:?}");
+    check!(spread(&designed_i) <= MAX_ROLL_12_I_SPREAD, "{designed:?}");
 }
 
-/// The X-Plane Alia 250's pitch design: its 5° step at the 60°/s pitch rate limit.
-const ALIA_PITCH: WingDesignConfig = WingDesignConfig {
-    amplitude_rad: 5.0 * DEG,
-    max_rate_radps: 60.0 * DEG,
-    ..CONFIG
-};
-
-/// Most that [`ALIA_PITCH`]'s designed P may vary over its fits, as the largest over the
+/// Most that the Alia's designed pitch P may vary over its fits, as the largest over the
 /// smallest: one step of the P grid (0.8 to 1.33, 1.66×), the fits straddling the damping
-/// where the pick moves a cell.
+/// where the pick moves a cell. A pin on the design's grid, not a spec band.
 const MAX_PITCH_P_SPREAD: f32 = 1.7;
 
-/// The X-Plane Alia's stiff, lightly damped pitch designs within one P cell and one I over
-/// the scatter of three runs' fits, and past it: stiffness 7.16–7.66/s², damping
-/// 0.95–1.17/s, control 1.09–1.17 rad/s², a 1.05–1.09/s path turn. The steps that verified
-/// them rose in 1.82–1.90 s and overshot at most 0.04 (#694).
+/// The design of the X-Plane Alia's stiff, lightly damped pitch stays within one P cell and
+/// one I over the scatter of three runs' fits (stiffness 7.16–7.66/s², damping 0.95–1.17/s,
+/// control 1.09–1.17 rad/s², path turn 1.05–1.09/s) and past it, on the plane design's pitch
+/// plan with the Alia's 5° step and 60°/s rate limit. Every fit read an 8 ms delay and a 0.22
+/// trim moment (0.215–0.227), held fixed. The steps that verified the runs' gains rose in
+/// 1.82–1.90 s and overshot at most 0.04 (#694).
 #[test]
 fn the_alias_pitch_design_holds_one_p_cell_over_its_fits_scatter() {
+    let stabilizer = PlaneStabilizerConfig {
+        max_attitude_rate_radps: Vec2::new(12.0 * DEG, 60.0 * DEG),
+        ..PlaneStabilizerConfig::default()
+    };
+    let mut config = PlaneDesignPlan::for_plane(PlaneLoop::Pitch, &stabilizer).design;
+    config.amplitude_rad = 5.0 * DEG;
     let mut designed = std::vec::Vec::new();
-    for stiffness_per_s2 in [7.1, 7.35, 7.6] {
-        for damping_per_s in [0.95, 1.05, 1.15] {
-            for control_radps2 in [1.09, 1.13, 1.17] {
-                let model = WingModel {
-                    stiffness_per_s2,
-                    damping_per_s,
-                    control_radps2,
-                    lag_s: 0.0,
-                    delay_s: 0.008,
-                    path_turn_per_s: 1.07,
-                    trim_moment: 0.22,
-                };
-                let (_, status) = run(WingDesign::new(model, ALIA_PITCH));
-                let WingDesignStatus::Done(gains) = status else {
-                    panic!("{model:?}: {status:?}");
-                };
-                designed.push((gains.rate.p, gains.rate.i));
+    for stiffness_per_s2 in [7.0, 7.35, 7.8] {
+        for damping_per_s in [0.9, 1.05, 1.2] {
+            for control_radps2 in [1.05, 1.13, 1.2] {
+                for path_turn_per_s in [1.05, 1.13] {
+                    let model = WingModel {
+                        stiffness_per_s2,
+                        damping_per_s,
+                        control_radps2,
+                        lag_s: 0.0,
+                        delay_s: 0.008,
+                        path_turn_per_s,
+                        trim_moment: 0.22,
+                    };
+                    let (_, status) = run(WingDesign::new(model, config));
+                    let WingDesignStatus::Done(gains) = status else {
+                        panic!("{model:?}: {status:?}");
+                    };
+                    designed.push((gains.rate.p, gains.rate.i));
+                }
             }
         }
     }
-    let least_p = designed
-        .iter()
-        .map(|&(p, _)| p)
-        .fold(f32::INFINITY, f32::min);
-    let most_p = designed.iter().map(|&(p, _)| p).fold(0.0, f32::max);
-    check!(most_p / least_p <= MAX_PITCH_P_SPREAD, "{designed:?}");
-    check!(
-        designed.iter().all(|&(_, i)| i == designed[0].1),
-        "{designed:?}"
-    );
+    let (designed_p, designed_i): (std::vec::Vec<f32>, std::vec::Vec<f32>) =
+        designed.iter().copied().unzip();
+    check!(spread(&designed_p) <= MAX_PITCH_P_SPREAD, "{designed:?}");
+    check!(spread(&designed_i) == 1.0, "{designed:?}");
 }
 
 #[test]
