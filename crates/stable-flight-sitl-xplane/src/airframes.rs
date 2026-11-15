@@ -194,7 +194,9 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     // 7.3–9.3/s (feedforward 3.13–3.15) and a stiff, lightly damped pitch
                     // (7.2–7.7/s², 0.95–1.17/s), so the integrators carry most of the hold. Roll
                     // P is every run's; its I is two runs', its feedforward and time constant
-                    // the third's, whose pitch set this is (#694).
+                    // the third's, whose pitch set this is. Their steps: roll rate rises in
+                    // 243 ms without overshoot, pitch rate in 289 ms but bounces 0.29 and doesn't
+                    // settle, a 20° bank in 1.44 s (#694).
                     roll: RateGains {
                         p: 0.0632,
                         i: 0.64,

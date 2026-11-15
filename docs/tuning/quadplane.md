@@ -137,28 +137,34 @@ climb, then tune on the model and pin the X-Plane airframe to it.
   over three runs (#694). `PSTAB_RMAX_X` 12°/s and `PSTAB_TC_X` 0.7 s rise a 20° bank in
   1.46 s, with `PSTAB_RLL_I` 1.0 to hold the roll into the turn.
 
-**Worked example (Alia 250 plane autotune in X-Plane, #537):** `plane-autotune-xplane`
+**Worked example (Alia 250 plane autotune in X-Plane, #537, #694):** `plane-autotune-xplane`
 (Oceano, calm, `flights/alia_plane_tune.csv`) holds 6 km offshore at 300 m and trim 45 m/s,
 then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks/s.
 - **Roll into the bank:** the X-Plane Alia rolls further in once banked, holding 0.13–0.27 of
   opposite aileron at 20°. Its roll steps held past the target until the design doubled I on
   each such pair; the sim Alia, its roll moment from yaw rate (`c_roll_r`) fitted to that
   aileron (#458), reproduces it.
-- **Spread over runs:** three design runs fit roll damping 3.7–6.8/s and a stiff, lightly
-  damped pitch (5.7–7.3/s², 0.7–1.6/s), so pitch I lands at 10–20 against the sim's 0.7. The
-  airframe flies each gain's median, which falls on one run's roll set and another's pitch
-  set: roll P 0.0138 I 2.56 FF 2.81, `PSTAB_TC_X` 0.707 s; pitch P 0.482 I 10 FF 0.859,
-  `PSTAB_TC_Y` 0.876 s. The run with pitch I 20 and P 0.008 overshot pitch rate steps 34%.
-- **Laps against the hand tune:** the descent lap's banked sink peaks at 4.63 m/s (5.15 on the
-  hand tune), and the transition lap's handoff into plane flight sinks 3.5 m/s and dips 4.0 m
+- **A noisy roll rate:** X-Plane repeats the roll rate on more than half the ticks, which reads
+  the equation-error fit's damping low and lets one tick of phase swing its feedforward
+  2.1–3.1. Refining the roll terms against the simulated rate holds it to 3.13–3.15 over three
+  runs at `PSTAB_RMAX_X` 12°/s.
+- **Spread over runs:** the fits read roll damping 7.3–9.3/s and a stiff, lightly damped pitch
+  (7.2–7.7/s², 0.95–1.17/s), so pitch I lands on the grid's top, 10 (20 on one run's doubled
+  overshoot pair). The airframe flies each gain's median: roll P 0.0632 I 0.64 FF 3.14,
+  `PSTAB_TC_X` 0.849 s; pitch P 1.33 I 10 FF 0.94, `PSTAB_TC_Y` 0.876 s.
+- **Accepted costs:** the pitch rate step bounces 0.29 and doesn't settle within the window,
+  and a 20° bank rises 0.2 s slower than the hand tune's: the roll rate limit holds the
+  ailerons inside their throw.
+- **Laps against the hand tune:** the descent lap's banked sink peaks at 4.78 m/s (5.15 on the
+  hand tune), and the transition lap's handoff into plane flight sinks 3.45 m/s and dips 3.8 m
   (2.9 m/s, 2.5 m).
 
   | Loop | Hand tune: overshoot / rise / settle / final | Autotuned (confirm run) |
   |---|---|---|
-  | Roll rate | 0.10 / 219 / 593 ms / 1.02 | 0.15 / 256 / 541 ms / 1.07 |
-  | Pitch rate | 0.00 / — / — / 0.50 | 0.09 / 326 / 876 ms / 0.74 |
-  | Roll angle | 0.15 / 1241 / 1640 ms / 1.13 | 0.12 / 1301 / 3153 ms / 1.04 |
-  | Pitch angle | 0.01 / 2292 / 2515 ms / 0.98 | 0.04 / 1763 / 2194 ms / 1.01 |
+  | Roll rate | 0.10 / 219 / 593 ms / 1.02 | 0.00 / 243 / 274 ms / 0.93 |
+  | Pitch rate | 0.00 / — / — / 0.50 | 0.05 / 289 / — / 0.75 |
+  | Roll angle | 0.15 / 1241 / 1640 ms / 1.13 | 0.09 / 1439 / 2535 ms / 1.07 |
+  | Pitch angle | 0.01 / 2292 / 2515 ms / 0.98 | 0.03 / 1837 / 2071 ms / 1.01 |
 
 **Worked example (Titan Cobra in RealFlight):**
 - **Hover:** nose-heavy on its lift rotors, a level hover holds front motors at 0.61 and rear
@@ -246,7 +252,7 @@ thrust and one at least, or read them off a fitted model (the Alia's
   5.14–5.24 m/s on 3 s and pitch I 1; either alone left it at 5.40–5.44. The cost is the
   forward transition's handoff, which sinks faster: 3.2 m/s against 2.1
   ([#547](https://github.com/wboayue/stable-flight/issues/547)). The autotuned pitch I 10
-  peaks at 4.63 m/s ([#537](https://github.com/wboayue/stable-flight/issues/537)).
+  peaks at 4.78 m/s ([#694](https://github.com/wboayue/stable-flight/issues/694)).
 - **Forward transition times out short of `TRAN_ASPD_MIN`:** the plane guidance already
   pitches for airspeed at the transition's limits (3°, 8° on the ramp), so what's left is
   thrust and time: raise `TRAN_PSH_SLEW`, or `TRAN_TIMEOUT`. The sim Alia reaches its
