@@ -288,12 +288,14 @@ fn refines_roll_terms_or_keeps_the_start() {
         ),
         // No surface moves the rate: no step lowers the residual.
         ("an unexcited window keeps its start", 0.0, biased, biased),
-        // Every simulation runs away: no step is finite.
+        // Every simulation runs away, so no step lowers the residual and the damping passes
+        // `MAX_REFINE_DAMPING`.
         ("a runaway start is kept", 0.3, RUNAWAY_ROLL, RUNAWAY_ROLL),
     ];
     for (name, amplitude, start, expected) in rows {
         let (window, surface) = refine_case(amplitude);
-        let refined = refine(&window, &surface, 0, REFINE_SAMPLE_S, &fit_holding(&start));
+        let refined =
+            refine_roll_terms(&window, &surface, 0, REFINE_SAMPLE_S, &fit_holding(&start));
         for (got, want) in [
             (refined.damping_per_s, expected.damping_per_s),
             (refined.control_radps2, expected.control_radps2),

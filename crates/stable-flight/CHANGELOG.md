@@ -20,10 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   order's own rise, and on the X-Plane Alia 250's pitch three pairs failed at 2.21–2.36 time
   constants while P went from 0.8 to 3.66 (#694).
 - **Breaking:** `PlaneDesignPlan::verify_rise_margin`, at least 1 (#694).
-- **Breaking (behavior):** `WingIdentifyProbe` refines an axis fitted without angle of attack (roll): its damping and control, to
-  the rate simulated from the moments, at the lag and delay the fit on the rate's change picks.
-  X-Plane's noisy roll rate biased that fit: the Alia 250's roll feedforward read 2.09 to 3.12
-  over three runs, 2.80 to 3.17 refined (#694).
+- **Breaking (behavior):** `WingIdentifyProbe` refines an axis fitted without angle of
+  attack (roll): its damping and control, to the rate simulated from the moments, at the lag
+  and delay the fit on the rate's change picks. X-Plane's noisy roll rate biased that fit: the
+  Alia 250's three recorded roll windows read feedforward 2.09 to 3.12, 2.80 to 3.17 refined
+  (#694).
 
 ## [0.3.0] - 2026-11-12
 

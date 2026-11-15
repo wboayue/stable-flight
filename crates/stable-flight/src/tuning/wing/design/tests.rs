@@ -303,6 +303,51 @@ fn the_alias_roll_design_holds_its_p_over_its_fits_scatter() {
     check!(most / least <= MAX_ROLL_P_SPREAD, "P {least} to {most}");
 }
 
+/// The X-Plane Alia 250's roll design as it flies: its 12°/s rate limit, at the default clip.
+const ALIA_ROLL_12: WingDesignConfig = WingDesignConfig {
+    max_rate_radps: 12.0 * DEG,
+    max_saturated_s: CONFIG.max_saturated_s,
+    ..ALIA_ROLL
+};
+
+/// Most that [`ALIA_ROLL_12`]'s designed roll P and I may vary over its fits, as the largest
+/// over the smallest: they design P 0.038 to 0.063 (1.66×) and I 0.32 to 0.63 (1.97×).
+const MAX_ROLL_12_P_SPREAD: f32 = 2.0;
+const MAX_ROLL_12_I_SPREAD: f32 = 2.5;
+
+/// At 12°/s the design holds P and I over the refined fits of three X-Plane runs, damping
+/// 7.3–9.3/s, and the recorded windows' feedforward 2.8–3.2 and a step past it (#694).
+#[test]
+fn the_alias_12_degps_roll_design_holds_its_gains_over_its_fits_scatter() {
+    let mut designed = std::vec::Vec::new();
+    for damping_per_s in [7.3, 8.0, 8.6, 9.3] {
+        for feedforward in [2.8, 3.0, 3.15, 3.3] {
+            let model = WingModel {
+                stiffness_per_s2: 0.0,
+                damping_per_s,
+                control_radps2: damping_per_s / feedforward,
+                lag_s: 0.0,
+                delay_s: 0.0,
+                path_turn_per_s: 0.0,
+                trim_moment: -0.07,
+            };
+            let (_, status) = run(WingDesign::new(model, ALIA_ROLL_12));
+            let WingDesignStatus::Done(gains) = status else {
+                panic!("damping {damping_per_s} feedforward {feedforward}: {status:?}");
+            };
+            designed.push((gains.rate.p, gains.rate.i));
+        }
+    }
+    let spread = |values: std::vec::Vec<f32>| {
+        let least = values.iter().copied().fold(f32::INFINITY, f32::min);
+        values.iter().copied().fold(0.0, f32::max) / least
+    };
+    let p_spread = spread(designed.iter().map(|&(p, _)| p).collect());
+    let i_spread = spread(designed.iter().map(|&(_, i)| i).collect());
+    check!(p_spread <= MAX_ROLL_12_P_SPREAD, "{designed:?}");
+    check!(i_spread <= MAX_ROLL_12_I_SPREAD, "{designed:?}");
+}
+
 #[test]
 fn meets_targets_checks_each() {
     let good = StepMetrics {

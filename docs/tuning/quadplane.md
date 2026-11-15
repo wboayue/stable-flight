@@ -146,8 +146,8 @@ then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks
   aileron (#458), reproduces it.
 - **A noisy roll rate:** X-Plane repeats the roll rate on more than half the ticks, which reads
   the equation-error fit's damping low and lets one tick of phase swing its feedforward
-  2.1–3.1. Refining the roll terms against the simulated rate holds it to 3.13–3.15 over three
-  runs at `PSTAB_RMAX_X` 12°/s.
+  2.1–3.1. Refining the roll terms against the simulated rate reads the same windows 2.8–3.2,
+  and three new runs at `PSTAB_RMAX_X` 12°/s 3.13–3.15.
 - **Spread over runs:** the fits read roll damping 7.3–9.3/s and a stiff, lightly damped pitch
   (7.2–7.7/s², 0.95–1.17/s), so pitch I lands on the grid's top, 10 (20 on one run's doubled
   overshoot pair). The airframe flies each gain's median: roll P 0.0632 I 0.64 FF 3.14,
@@ -155,10 +155,10 @@ then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks
 - **Accepted costs:** the pitch rate step bounces 0.29 and doesn't settle within the window,
   and a 20° bank rises 0.2 s slower than the hand tune's: the roll rate limit holds the
   ailerons inside their throw.
-- **Laps against the hand tune:** the descent lap's banked sink peaks at 5.32 m/s over 0.5 s
-  (5.15 on the hand tune), 0.27 m of it a 97 ms stall in X-Plane's altitude (4.78 m/s by its
-  climb rate), and the transition lap's handoff into plane flight sinks 3.45 m/s and dips 3.8 m
-  (2.9 m/s, 2.5 m).
+- **Laps against the hand tune** (one lap each): the descent lap's banked sink peaks at
+  5.32 m/s over 0.5 s (5.15 on the hand tune), 0.27 m of it a 97 ms stall in X-Plane's
+  altitude (4.78 m/s by its climb rate), and the transition lap's handoff into plane flight
+  sinks 3.45 m/s and dips 3.8 m (2.9 m/s, 2.5 m).
 
   | Loop | Hand tune: overshoot / rise / settle / final | Autotuned (confirm run) |
   |---|---|---|
