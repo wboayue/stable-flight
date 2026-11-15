@@ -13,10 +13,9 @@
 //! last kept gains, and the Alia hovers where it is, on its lift rotors, then lands there.
 //!
 //! It flies [`airframes::alia250`] on [`QuadPlaneGuidance`] and [`QuadPlaneStabilizer`], its
-//! lift rotors stopped in plane flight, with the Alia's own steps: 5° of pitch, a 15% roll
-//! overshoot allowance, and roll steps (designed and tested) that may clip for 0.3 s (as
-//! `stable-flight-sim`'s `tests/plane_autotune.rs` tunes it). A run flies about 10 minutes in
-//! the hold.
+//! lift rotors stopped in plane flight, with the Alia's own steps: 5° of pitch and a 15% roll
+//! overshoot allowance (as `stable-flight-sim`'s `tests/plane_autotune.rs` tunes it). A run
+//! flies about 10 minutes in the hold.
 //!
 //! [`QuadPlaneGuidance`]: stable_flight::guidance::vtol::QuadPlaneGuidance
 //! [`QuadPlaneStabilizer`]: stable_flight::stabilizers::vtol::QuadPlaneStabilizer

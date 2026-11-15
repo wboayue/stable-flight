@@ -159,8 +159,8 @@ pub fn alia250() -> QuadPlaneAirframe {
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: PlaneRateControllerConfig {
             // I 1.0 holds a 20° bank against the roll into the turn: at 0.8 a step ended 1.12
-            // past and never settled. From ×3 gains the autotune's pitch converges only up to
-            // 1.0 (#694).
+            // past and never settled (#694). Above 1.0 the autotune from ×3 gains sags in pitch
+            // rather than converging, one of its sensitivities to its starting state (#698).
             roll: RateGains {
                 p: 0.47,
                 i: 1.0,

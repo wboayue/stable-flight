@@ -258,8 +258,8 @@ fn advances_by_the_candidates_asked() {
     check!(design.advance(1) == done);
 }
 
-/// The X-Plane Alia 250's roll design: its 20° step, its 15% overshoot and 0.3 s of clipping,
-/// and its 15°/s rate limit (`plane-autotune-xplane`).
+/// The X-Plane Alia 250's roll design at a 15°/s rate limit with 0.3 s of clipping, where its
+/// fits' scatter tied the pick: its 20° step and 15% overshoot (`plane-autotune-xplane`).
 const ALIA_ROLL: WingDesignConfig = WingDesignConfig {
     amplitude_rad: 20.0 * DEG,
     max_rate_radps: 15.0 * DEG,

@@ -202,12 +202,117 @@ const MAX_ROLL_FEEDFORWARD_SPREAD: f32 = 1.2;
 #[test]
 fn the_xplane_alias_roll_fits_one_feedforward_over_three_runs() {
     let feedforwards = xplane_alia_roll_windows().map(|ticks| fit_recorded(&ticks).feedforward());
+    check!(
+        feedforwards.iter().all(|ff| ff.is_finite()),
+        "{feedforwards:?}"
+    );
     let low = feedforwards.iter().copied().fold(f32::INFINITY, f32::min);
     let high = feedforwards.iter().copied().fold(0.0, f32::max);
     check!(
         high / low <= MAX_ROLL_FEEDFORWARD_SPREAD,
         "{feedforwards:?}"
     );
+}
+
+/// The refinement's sample, in s.
+const REFINE_SAMPLE_S: f32 = DT * DECIMATION as f32;
+
+/// The roll terms `refine_case`'s window is simulated from.
+const TRUE_ROLL: RollTerms = RollTerms {
+    damping_per_s: 8.0,
+    control_radps2: 3.0,
+    constant_radps2: 0.1,
+    start_radps: 0.0,
+};
+
+/// Roll terms whose simulation runs away: damping −225/s multiplies the rate by 19 each
+/// sample.
+const RUNAWAY_ROLL: RollTerms = RollTerms {
+    damping_per_s: -225.0,
+    ..TRUE_ROLL
+};
+
+/// A full window whose rate `TRUE_ROLL` simulates exactly from a ±`amplitude` surface square
+/// wave of 1 s, with no delay, and the surface.
+fn refine_case(amplitude: f32) -> (Window, [f32; WINDOW_CAPACITY]) {
+    let mut window = Window::new();
+    let mut surface = [0.0f32; WINDOW_CAPACITY];
+    let h = f64::from(REFINE_SAMPLE_S);
+    let half_damping = 0.5 * h * TRUE_ROLL.damping_per_s;
+    let mut rate = TRUE_ROLL.start_radps;
+    for k in 0..WINDOW_CAPACITY {
+        let half_period = (k as f32 * REFINE_SAMPLE_S / 0.5) as usize;
+        surface[k] = if half_period.is_multiple_of(2) {
+            amplitude
+        } else {
+            -amplitude
+        };
+        if k > 0 {
+            let push = TRUE_ROLL.control_radps2 * f64::from(surface[k]) + TRUE_ROLL.constant_radps2;
+            rate = ((1.0 - half_damping) * rate + h * push) / (1.0 + half_damping);
+        }
+        window.rates_radps[k] = rate as f32;
+        window.moments[k] = surface[k];
+    }
+    window.len = WINDOW_CAPACITY;
+    (window, surface)
+}
+
+/// A least squares fit holding `terms` (stiffness 0).
+fn fit_holding(terms: &RollTerms) -> Fit {
+    Fit {
+        terms: SVector::<f64, TERMS>::new(
+            0.0,
+            -terms.damping_per_s,
+            terms.control_radps2,
+            terms.constant_radps2,
+        ),
+        residual: 0.0,
+    }
+}
+
+#[test]
+fn refines_roll_terms_or_keeps_the_start() {
+    let biased = RollTerms {
+        damping_per_s: 4.0,
+        control_radps2: 1.5,
+        ..TRUE_ROLL
+    };
+    // (name, surface amplitude, start, expected terms)
+    let rows = [
+        (
+            "a biased start recovers the simulated terms",
+            0.3,
+            biased,
+            TRUE_ROLL,
+        ),
+        // No surface moves the rate: no step lowers the residual.
+        ("an unexcited window keeps its start", 0.0, biased, biased),
+        // Every simulation runs away: no step is finite.
+        ("a runaway start is kept", 0.3, RUNAWAY_ROLL, RUNAWAY_ROLL),
+    ];
+    for (name, amplitude, start, expected) in rows {
+        let (window, surface) = refine_case(amplitude);
+        let refined = refine(&window, &surface, 0, REFINE_SAMPLE_S, &fit_holding(&start));
+        for (got, want) in [
+            (refined.damping_per_s, expected.damping_per_s),
+            (refined.control_radps2, expected.control_radps2),
+        ] {
+            check!(
+                (got - want).abs() <= 1e-3 * want.abs().max(1.0),
+                "{name}: {refined:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_runaway_simulation_is_infinitely_off() {
+    let (window, surface) = refine_case(0.3);
+    let residual = simulate(&window, &surface, 0, REFINE_SAMPLE_S, &RUNAWAY_ROLL, None);
+    check!(residual == f64::INFINITY);
+    let exact = simulate(&window, &surface, 0, REFINE_SAMPLE_S, &TRUE_ROLL, None);
+    check!(exact < 1e-6);
 }
 
 #[test]

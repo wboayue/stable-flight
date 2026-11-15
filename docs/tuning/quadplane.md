@@ -155,8 +155,9 @@ then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks
 - **Accepted costs:** the pitch rate step bounces 0.29 and doesn't settle within the window,
   and a 20° bank rises 0.2 s slower than the hand tune's: the roll rate limit holds the
   ailerons inside their throw.
-- **Laps against the hand tune:** the descent lap's banked sink peaks at 4.78 m/s (5.15 on the
-  hand tune), and the transition lap's handoff into plane flight sinks 3.45 m/s and dips 3.8 m
+- **Laps against the hand tune:** the descent lap's banked sink peaks at 5.32 m/s over 0.5 s
+  (5.15 on the hand tune), 0.27 m of it a 97 ms stall in X-Plane's altitude (4.78 m/s by its
+  climb rate), and the transition lap's handoff into plane flight sinks 3.45 m/s and dips 3.8 m
   (2.9 m/s, 2.5 m).
 
   | Loop | Hand tune: overshoot / rise / settle / final | Autotuned (confirm run) |
@@ -252,7 +253,8 @@ thrust and one at least, or read them off a fitted model (the Alia's
   5.14–5.24 m/s on 3 s and pitch I 1; either alone left it at 5.40–5.44. The cost is the
   forward transition's handoff, which sinks faster: 3.2 m/s against 2.1
   ([#547](https://github.com/wboayue/stable-flight/issues/547)). The autotuned pitch I 10
-  peaks at 4.78 m/s ([#694](https://github.com/wboayue/stable-flight/issues/694)).
+  peaks at 5.32 m/s, 0.27 m of it a stall in X-Plane's altitude (4.78 m/s by climb rate,
+  [#694](https://github.com/wboayue/stable-flight/issues/694)).
 - **Forward transition times out short of `TRAN_ASPD_MIN`:** the plane guidance already
   pitches for airspeed at the transition's limits (3°, 8° on the ramp), so what's left is
   thrust and time: raise `TRAN_PSH_SLEW`, or `TRAN_TIMEOUT`. The sim Alia reaches its
