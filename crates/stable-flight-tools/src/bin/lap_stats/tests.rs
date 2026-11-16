@@ -102,7 +102,7 @@ fn measures_peak_sink_over_half_a_second() {
         100.0 - 4.5 * held_s
     }
     // (name, altitude, vertical speed, expected peak sink m/s)
-    let rows: [(&str, Profile, Profile, f32); 4] = [
+    let rows: [(&str, Profile, Profile, f32); 6] = [
         ("steady 2 m/s descent", |t| 100.0 - 2.0 * t, |_| -2.0, 2.0),
         ("level", |_| 100.0, |_| 0.0, 0.0),
         ("climb", |t| 100.0 + 3.0 * t, |_| 3.0, 0.0),
@@ -111,6 +111,28 @@ fn measures_peak_sink_over_half_a_second() {
             stalled_m,
             |_| -4.5,
             4.5,
+        ),
+        // The vertical speed, not the altitude, when they disagree (#701).
+        (
+            "altitude 5 m/s, vertical speed 4 m/s",
+            |t| 100.0 - 5.0 * t,
+            |_| -4.0,
+            4.0,
+        ),
+        // A blank cell doesn't lose the rest of the lap.
+        (
+            "unreadable vertical speed before a 3 m/s descent",
+            |_| 100.0,
+            |t| {
+                if t < 1.05 {
+                    f32::NAN
+                } else if t < 2.0 {
+                    0.0
+                } else {
+                    -3.0
+                }
+            },
+            3.0,
         ),
     ];
     for (name, altitude_m, climb_mps, expected) in rows {
