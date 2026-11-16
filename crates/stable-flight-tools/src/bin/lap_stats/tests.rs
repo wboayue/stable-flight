@@ -4,9 +4,9 @@ use assert2::check;
 use super::*;
 
 const HEADER: &str =
-    "wall_s,armed,mode,altitude,roll,pitch,sp_kind,sp_roll,sp_pitch,north_m,east_m";
+    "wall_s,armed,mode,altitude,climb_mps,roll,pitch,sp_kind,sp_roll,sp_pitch,north_m,east_m";
 
-/// An altitude in m against time in s.
+/// An altitude in m, or a vertical speed in m/s, against time in s.
 type Profile = fn(f32) -> f32;
 
 /// Tick spacing of the synthetic laps, in s.
@@ -18,6 +18,7 @@ struct Tick {
     armed: bool,
     mode: u8,
     altitude_m: f32,
+    climb_mps: f32,
     roll_rad: f32,
     pitch_rad: f32,
     sp_roll_rad: f32,
@@ -31,6 +32,7 @@ const PLANE: Tick = Tick {
     armed: true,
     mode: 1,
     altitude_m: 100.0,
+    climb_mps: 0.0,
     roll_rad: 0.0,
     pitch_rad: 0.0,
     sp_roll_rad: 0.0,
@@ -44,11 +46,12 @@ fn lap(ticks: &[Tick]) -> Recording {
     let mut csv = format!("{HEADER}\n");
     for (i, t) in ticks.iter().enumerate() {
         csv += &format!(
-            "{},{},{},{},{},{},plane,{},{},{},{}\n",
+            "{},{},{},{},{},{},{},plane,{},{},{},{}\n",
             i as f32 * TICK_S,
             u8::from(t.armed),
             t.mode,
             t.altitude_m,
+            t.climb_mps,
             t.roll_rad,
             t.pitch_rad,
             t.sp_roll_rad,
@@ -84,30 +87,55 @@ fn times_plane_flight() {
     assert_relative_eq!(stats(&ticks).plane_s, 20.0, epsilon = 1e-3);
 }
 
-/// Peak sink is the fastest loss over a 0.5 s window, down positive; climbing reads 0.
+/// Peak sink is the fastest mean vertical speed over a 0.5 s window, down positive; climbing
+/// reads 0. Altitude doesn't count: a simulator clock that stalls and catches up (#700) holds
+/// it, then drops it in a burst.
 #[test]
 fn measures_peak_sink_over_half_a_second() {
-    // (name, altitude profile, expected peak sink m/s)
-    let rows: [(&str, Profile, f32); 3] = [
-        ("steady 2 m/s descent", |t| 100.0 - 2.0 * t, 2.0),
-        ("level", |_| 100.0, 0.0),
-        ("climb", |t| 100.0 + 3.0 * t, 0.0),
+    // Altitude held from 5.0 s to 5.2 s, then caught up, on a 4.5 m/s descent.
+    fn stalled_m(time_s: f32) -> f32 {
+        let held_s = if (5.0..5.2).contains(&time_s) {
+            5.0
+        } else {
+            time_s
+        };
+        100.0 - 4.5 * held_s
+    }
+    // (name, altitude, vertical speed, expected peak sink m/s)
+    let rows: [(&str, Profile, Profile, f32); 4] = [
+        ("steady 2 m/s descent", |t| 100.0 - 2.0 * t, |_| -2.0, 2.0),
+        ("level", |_| 100.0, |_| 0.0, 0.0),
+        ("climb", |t| 100.0 + 3.0 * t, |_| 3.0, 0.0),
+        (
+            "altitude stall on a 4.5 m/s descent",
+            stalled_m,
+            |_| -4.5,
+            4.5,
+        ),
     ];
-    for (name, profile, expected) in rows {
-        let sink = stats(&plane_profile(10.0, profile)).peak_sink_mps;
+    for (name, altitude_m, climb_mps, expected) in rows {
+        let ticks: Vec<Tick> = plane_profile(10.0, altitude_m)
+            .into_iter()
+            .enumerate()
+            .map(|(i, tick)| Tick {
+                climb_mps: climb_mps(i as f32 * TICK_S),
+                ..tick
+            })
+            .collect();
+        let sink = stats(&ticks).peak_sink_mps;
         check!((sink - expected).abs() < 1e-3, "{name}: {sink}");
     }
 }
 
-/// A drop between rows further apart than the window is a gap, not a sink.
+/// Rows further apart than the window's shortest span are a gap, not a sink.
 #[test]
 fn ignores_sinks_across_sparse_rows() {
     let recording = Recording::parse(
-        "wall_s,armed,mode,altitude,roll,pitch,sp_roll,sp_pitch,north_m,east_m
-0.0,1,1,100,0,0,0,0,0,0
-0.3,1,1,90,0,0,0,0,0,0
-0.6,1,1,80,0,0,0,0,0,0
-0.9,1,1,70,0,0,0,0,0,0",
+        "wall_s,armed,mode,altitude,climb_mps,roll,pitch,sp_roll,sp_pitch,north_m,east_m
+0.0,1,1,100,-33,0,0,0,0,0,0
+0.3,1,1,90,-33,0,0,0,0,0,0
+0.6,1,1,80,-33,0,0,0,0,0,0
+0.9,1,1,70,-33,0,0,0,0,0,0",
     )
     .expect("a recording");
     let stats = LapStats::from_recording(&recording).expect("lap stats");
