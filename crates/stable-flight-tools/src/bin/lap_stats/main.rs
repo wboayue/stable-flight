@@ -4,8 +4,10 @@
 //! Per CSV, over the rows in plane mode (`mode` 1):
 //!
 //! - **Plane time:** first plane row to last, in s.
-//! - **Peak sink:** the fastest altitude loss over a trailing 0.5 s window, in m/s, down
-//!   positive (compare against guidance's `PGUID_SINK_MAX`).
+//! - **Peak sink:** the fastest mean vertical speed (`climb_mps`) over a trailing 0.5 s window,
+//!   in m/s, down positive (compare against guidance's `PGUID_SINK_MAX`, which limits the same
+//!   speed). Altitude differenced over the recorder's wall clock reads high when the simulator's
+//!   clock stalls and catches up (X-Plane, #700).
 //! - **Handoff dip:** how far the airframe sags after the handoff into plane, in m: the handoff
 //!   altitude minus the lowest point in the next 30 s, when altitude climbs back to the
 //!   handoff's after it. None ("—") when it doesn't, as when the first plane leg descends on
@@ -33,7 +35,7 @@ mod tests;
 /// Peak sink's trailing window, in s.
 const SINK_WINDOW_S: f32 = 0.5;
 /// Shortest span a sink is measured over, in s: shorter ones (a gap in the plane rows, the
-/// window's first rows) amplify altitude noise.
+/// window's first rows) aren't a 0.5 s mean.
 const MIN_SINK_SPAN_S: f32 = 0.4;
 /// How long after the handoff the airframe has to climb back for its dip to count, in s.
 const DIP_WINDOW_S: f32 = 30.0;
@@ -130,6 +132,8 @@ struct Sample {
     armed: bool,
     plane: bool,
     altitude_m: f32,
+    /// Vertical speed, up positive, in m/s.
+    climb_mps: f32,
     roll_rad: f32,
     pitch_rad: f32,
     sp_roll_rad: f32,
@@ -177,6 +181,7 @@ fn samples(recording: &Recording) -> Result<Vec<Sample>, LapError> {
     let armed = column("armed")?;
     let mode = column("mode")?;
     let altitude = column("altitude")?;
+    let climb = column("climb_mps")?;
     let (roll, pitch) = (column("roll")?, column("pitch")?);
     let (sp_roll, sp_pitch) = (column("sp_roll")?, column("sp_pitch")?);
     let (north, east) = (column("north_m")?, column("east_m")?);
@@ -188,6 +193,7 @@ fn samples(recording: &Recording) -> Result<Vec<Sample>, LapError> {
             armed: row[armed] == 1.0,
             plane: row[mode] == PLANE_MODE,
             altitude_m: row[altitude],
+            climb_mps: row[climb],
             roll_rad: row[roll],
             pitch_rad: row[pitch],
             sp_roll_rad: row[sp_roll],
@@ -198,18 +204,25 @@ fn samples(recording: &Recording) -> Result<Vec<Sample>, LapError> {
         .collect())
 }
 
-/// The fastest altitude loss over a trailing [`SINK_WINDOW_S`], down positive, in m/s; 0 when
-/// it never sinks.
+/// The fastest mean sink over a trailing [`SINK_WINDOW_S`], down positive, in m/s; 0 when it
+/// never sinks. The mean is the vertical speed integrated over the window's rows (trapezoids),
+/// divided by its span.
 fn peak_sink_mps(plane: &[Sample]) -> f32 {
+    // Climb integrated from the first row to each row, in m, up positive.
+    let mut climbed_m = vec![0.0_f32; plane.len()];
+    for (i, pair) in plane.windows(2).enumerate() {
+        let mean_climb_mps = 0.5 * (pair[0].climb_mps + pair[1].climb_mps);
+        climbed_m[i + 1] = climbed_m[i] + mean_climb_mps * (pair[1].time_s - pair[0].time_s);
+    }
     let mut peak_mps = 0.0_f32;
     let mut from = 0;
-    for now in plane {
+    for (i, now) in plane.iter().enumerate() {
         while plane[from].time_s < now.time_s - SINK_WINDOW_S {
             from += 1;
         }
         let span_s = now.time_s - plane[from].time_s;
         if span_s > MIN_SINK_SPAN_S {
-            peak_mps = peak_mps.max((plane[from].altitude_m - now.altitude_m) / span_s);
+            peak_mps = peak_mps.max((climbed_m[from] - climbed_m[i]) / span_s);
         }
     }
     peak_mps
