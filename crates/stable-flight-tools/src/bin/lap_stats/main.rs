@@ -7,7 +7,9 @@
 //! - **Peak sink:** the fastest mean vertical speed (`climb_mps`) over a trailing 0.5 s window,
 //!   in m/s, down positive (compare against guidance's `PGUID_SINK_MAX`, which limits the same
 //!   speed). Altitude differenced over the recorder's wall clock reads high when the simulator's
-//!   clock stalls and catches up (X-Plane, #700).
+//!   clock stalls and catches up (X-Plane, #700). A non-finite `climb_mps` row (a blank cell)
+//!   only lowers the windows over it. TODO(#701): on X-Plane, `climb_mps` and the altitude
+//!   rate disagree by up to 0.7 m/s over seconds, so this can read under the altitude's sink.
 //! - **Handoff dip:** how far the airframe sags after the handoff into plane, in m: the handoff
 //!   altitude minus the lowest point in the next 30 s, when altitude climbs back to the
 //!   handoff's after it. None ("—") when it doesn't, as when the first plane leg descends on
@@ -206,13 +208,20 @@ fn samples(recording: &Recording) -> Result<Vec<Sample>, LapError> {
 
 /// The fastest mean sink over a trailing [`SINK_WINDOW_S`], down positive, in m/s; 0 when it
 /// never sinks. The mean is the vertical speed integrated over the window's rows (trapezoids),
-/// divided by its span.
+/// divided by its span. A segment with a non-finite vertical speed adds nothing, so a window
+/// over it reads low, never high, and the rest of the lap still counts.
 fn peak_sink_mps(plane: &[Sample]) -> f32 {
     // Climb integrated from the first row to each row, in m, up positive.
     let mut climbed_m = vec![0.0_f32; plane.len()];
     for (i, pair) in plane.windows(2).enumerate() {
         let mean_climb_mps = 0.5 * (pair[0].climb_mps + pair[1].climb_mps);
-        climbed_m[i + 1] = climbed_m[i] + mean_climb_mps * (pair[1].time_s - pair[0].time_s);
+        let segment_m = mean_climb_mps * (pair[1].time_s - pair[0].time_s);
+        climbed_m[i + 1] = climbed_m[i]
+            + if segment_m.is_finite() {
+                segment_m
+            } else {
+                0.0
+            };
     }
     let mut peak_mps = 0.0_f32;
     let mut from = 0;

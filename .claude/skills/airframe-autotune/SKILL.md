@@ -41,7 +41,8 @@ Cobra), #537 (X-Plane Alia), #540 (Alia hover).
 6. **Laps:** the airframe's waypoint laps (`flights/<airframe>_*lap*.csv`) on the branch and
    on `main` (build `main` in a throwaway worktree with its own `CARGO_TARGET_DIR`).
    `lap_stats` on their CSVs prints the lap table. Compare peak sink in plane against
-   `PGUID_SINK_MAX` + 0.25, the dip after the handoff into plane, tracking error, and
+   `PGUID_SINK_MAX` + 0.25 (it reads `climb_mps`, which on X-Plane can read under the
+   altitude's sink: #701), the dip after the handoff into plane, tracking error, and
    touchdown distance. A lap limit an earlier issue set (#547's descent)
    must still hold.
 
