@@ -143,6 +143,7 @@ pub(crate) fn rescale_integral(integral: f32, old_i: f32, new_i: f32) -> f32 {
 
 /// PID gains for a single control loop.
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Gains {
     pub p: f32,
     pub i: f32,

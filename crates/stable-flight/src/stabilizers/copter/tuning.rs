@@ -12,6 +12,7 @@ mod tests;
 
 /// A loop of the [`CopterStabilizer`] that a tuning stage can replace.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TunedLoop {
     /// Roll rate loop: a probe sets the roll rate setpoint, in rad/s.
     RollRate,

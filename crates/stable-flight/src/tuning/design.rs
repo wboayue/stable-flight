@@ -95,6 +95,7 @@ impl LoopShapingConfig {
 
 /// Why a design found no gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DesignError {
     /// The fitted pole isn't a lag ([`RateModel::lag_s`] is `None`): at or past 1, the fit
     /// grows rather than lags.

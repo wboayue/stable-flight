@@ -1256,6 +1256,7 @@ impl Envelope {
 
 /// Why a stage failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AutotuneAbort {
     /// Roll or pitch passed [`Envelope::max_tilt_rad`], or a plane's bank or pitch its
     /// [`PlaneEnvelope`] limit.
@@ -1392,13 +1393,14 @@ pub enum AutotuneEvent<T = TunedLoop, G = Gains> {
     },
     /// Every stage committed; the run is over and its gains stay.
     Complete,
-    /// Disarmed before completion: every stage reverted to the config at
-    /// [`Autotune::start`].
+    /// Disarmed before completion, or [`Autotune::revert`]ed: every stage reverted to the
+    /// config at [`Autotune::start`].
     Reverted,
 }
 
 /// What a finished stage did to its loop's gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Outcome {
     /// Set them from its measurements. A search's result meets its criterion, or, from a
     /// start that failed it, flies closer to it than the start ([`SearchPlan`]).
@@ -1414,6 +1416,7 @@ pub enum Outcome {
 
 /// Why a search kept the start gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum KeepReason {
     /// No gain down to the search's `min` passed.
     NoPass,
@@ -1450,12 +1453,13 @@ pub enum AutotuneStatus<T = TunedLoop> {
         /// Why.
         reason: AutotuneAbort,
     },
-    /// Disarmed before completion; everything reverted.
+    /// Disarmed before completion, or reverted ([`Autotune::revert`]); everything reverted.
     Reverted,
 }
 
 /// Why [`Autotune::start`] refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StartError {
     /// The last tick wasn't armed.
     NotArmed,
@@ -2042,6 +2046,43 @@ impl<K: Side> Supervisor<K> {
     ) -> Option<Event<K>> {
         let stage = self.phase.active_stage()?;
         Some(self.fail(flight_loop, stage, reason))
+    }
+
+    /// Undoes the run, as a disarm before completion does: stops the running probe, puts back
+    /// the config at [`start`](Self::start), and reports
+    /// [`Reverted`](AutotuneEvent::Reverted). It works mid-run and after the run ended
+    /// (complete or failed), so a pilot can drop tuned gains after landing. `None`, changing
+    /// nothing, before any start and once reverted.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use stable_flight::FlightLoop;
+    /// # use stable_flight::stabilizers::copter::CopterStabilizer;
+    /// # use stable_flight::guidance::copter::CopterGuidance;
+    /// # use stable_flight::mixers::TableMixer;
+    /// # use stable_flight::testing::{ConstantCommander, NullVehicle};
+    /// use stable_flight::tuning::autotune::{Autotune, AutotuneEvent};
+    ///
+    /// # fn fly(flight_loop: &mut FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, ()>, autotune: &mut Autotune) {
+    /// // The ground station asked to stop: the start's gains come back.
+    /// assert_eq!(autotune.revert(flight_loop), Some(AutotuneEvent::Reverted));
+    /// # }
+    /// ```
+    pub fn revert<C, V, G, S: SideTunable<K>, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+    ) -> Option<Event<K>> {
+        if matches!(self.phase, Phase::Idle | Phase::Reverted) {
+            return None;
+        }
+        let run_start = self.run_start?;
+        flight_loop.stop_probe::<K::Target>();
+        restore(flight_loop, run_start);
+        self.last_good = Some(run_start);
+        self.committed = Some(run_start);
+        self.phase = Phase::Reverted;
+        Some(AutotuneEvent::Reverted)
     }
 
     /// Where the run stands.

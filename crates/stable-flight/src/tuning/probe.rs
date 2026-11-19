@@ -110,6 +110,7 @@ pub enum Measurement {
 
 /// Why a probe gave up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ProbeAbort {
     /// The step response ran the wrong way or away.
     Step(StepAbort),

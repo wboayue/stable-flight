@@ -1636,6 +1636,54 @@ fn an_abort_ends_the_run_on_the_kept_gains() {
     check!(autotune.abort(&mut flight_loop, AutotuneAbort::HostFault) == None);
 }
 
+/// A revert puts back the run's start config from mid-run, after completion, and after a
+/// failure, stopping any probe; before a start and once reverted it does nothing.
+#[test]
+fn a_revert_restores_the_run_start() {
+    let plan = [
+        design_stage(TunedLoop::RollRate),
+        design_stage(TunedLoop::PitchRate),
+    ];
+    for case in ["mid-run", "complete", "failed"] {
+        let (mut flight_loop, _controls) = hovering(1.0);
+        let start = *flight_loop.stabilizer().config();
+        let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid plan");
+        check!(autotune.revert(&mut flight_loop) == None, "{case}: idle");
+        autotune.start(&flight_loop).expect("armed and idle");
+        let mut ended = false;
+        for _ in 0..(120.0 / DT) as usize {
+            flight_loop.step(Duration::from_secs_f32(DT));
+            autotune.update(&mut flight_loop, DT);
+            let second_stage =
+                matches!(autotune.status(), AutotuneStatus::Running { stage: 1, .. });
+            if case == "mid-run" && second_stage && flight_loop.probe().is_some() {
+                ended = true;
+                break;
+            }
+            if case == "failed" && second_stage {
+                autotune.abort(&mut flight_loop, AutotuneAbort::HostFault);
+            }
+            if !autotune.is_running() {
+                ended = true;
+                break;
+            }
+        }
+        assert!(ended, "{case}: the run reached the revert point");
+        if case == "complete" {
+            check!(*flight_loop.stabilizer().config() != start, "{case}: tuned");
+        }
+
+        check!(
+            autotune.revert(&mut flight_loop) == Some(AutotuneEvent::Reverted),
+            "{case}"
+        );
+        check!(autotune.status() == AutotuneStatus::Reverted, "{case}");
+        check!(*flight_loop.stabilizer().config() == start, "{case}");
+        check!(flight_loop.probe() == None, "{case}");
+        check!(autotune.revert(&mut flight_loop) == None, "{case}: twice");
+    }
+}
+
 /// `DesignPlan::validate` rejects a negative or non-finite `rate_i_per_p`; the copter default
 /// and `None` are valid.
 #[test]
