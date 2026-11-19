@@ -55,8 +55,9 @@ just bridge          # link ⇄ MAVLink for QGC on UDP 14550
    [#296](https://github.com/wboayue/stable-flight/issues/296)). **AutoTune: complete: keep,
    or stop to revert** ends it; the tuned gains fly from then on, and the hold hands the copter
    back to the sticks.
-6. **Land:** hold the throttle stick down; the motors idle about a second after the copter
-   touches down. Disarm.
+6. **Land:** hold the throttle stick down until the motors idle, about 1.5 s after the
+   copter touches down. Let go sooner and it holds its height on the ground at hover thrust;
+   push the stick down again to idle it. Then disarm.
 
 ## Reading the messages
 

@@ -3,7 +3,7 @@
 //! flies the target; let go, the vehicle brakes and holds the height it stops at. Its
 //! settings: [`AltitudeHoldConfig`].
 
-use crate::commanders::TouchdownDetector;
+use crate::commanders::{DEFAULT_STOPPED_MPS, DEFAULT_TOUCHDOWN_HOLD_S};
 use crate::controllers::{AltitudeTarget, InvalidConfig, check, check_positive};
 use crate::math::saturate_unit;
 use crate::{AltitudeHoldCommand, AttitudeSetpoint, VehicleState};
@@ -128,8 +128,9 @@ pub(super) struct HoldState {
     /// `None` until altitude-hold flight starts, which reads it from the height above the
     /// ground the guidance was primed on.
     landed: Option<bool>,
-    /// Reads a touchdown at the end of a descent on the stick.
-    touchdown: TouchdownDetector,
+    /// How long, in s, the vehicle has held still against a stick down, its target well below
+    /// it: the ground holding it up.
+    grounded_s: f32,
     /// The stick is centered and the vehicle slowed enough to hold the height it was at.
     locked: bool,
 }
@@ -138,10 +139,17 @@ impl HoldState {
     /// Forgets it, for when altitude-hold flight ends.
     pub(super) fn reset(&mut self) {
         self.landed = None;
-        self.touchdown.reset();
+        self.grounded_s = 0.0;
         self.locked = false;
     }
 }
+
+/// How far below the vehicle, as a share of
+/// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m), its target must be
+/// for a vehicle held still against a stick down to read as on the ground: a target that far
+/// below and a vehicle not following it means the ground is in the way. In the air the vehicle
+/// keeps up with a sinking target to within its tracking error, centimeters on the sim.
+const GROUNDED_TARGET_LEASHES: f32 = 0.5;
 
 impl CopterGuidance {
     /// Altitude-hold flight: the roll, pitch, and yaw sticks as attitude flight's, and the
@@ -153,8 +161,11 @@ impl CopterGuidance {
     /// vehicle takes off. On the ground means: entering altitude-hold flight idle (or just
     /// armed) no higher than
     /// [`airborne_height_m`](super::CopterGuidanceConfig::airborne_height_m) above where
-    /// guidance was primed, or a descent on the stick having stopped
-    /// ([`TouchdownDetector`]). ArduPilot's AltHold does the same (`_TakeOff::triggered_ms`).
+    /// guidance was primed, or the vehicle held still for [`DEFAULT_TOUCHDOWN_HOLD_S`] against a
+    /// stick down, its target at least half the
+    /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m) below it
+    /// ([`holds_on_ground`](Self::holds_on_ground)). ArduPilot's AltHold idles the same way
+    /// (`_TakeOff::triggered_ms`, and its land detector on the throttle held low).
     pub(super) fn altitude_hold(
         &mut self,
         dt: f32,
@@ -192,8 +203,17 @@ impl CopterGuidance {
     }
 
     /// Whether the vehicle sits on the ground this tick, idling: landed (on entry, from its
-    /// height; in flight, once a descent on the stick stops) and the stick at or below the
-    /// deadzone. A climb takes off, the altitude target then latching from the vehicle.
+    /// height; in flight, once the ground holds it up against a stick down) and the stick at
+    /// or below the deadzone. A climb takes off, the altitude target then latching from the
+    /// vehicle.
+    ///
+    /// The ground holds it up when it stays slower than [`DEFAULT_STOPPED_MPS`] for
+    /// [`DEFAULT_TOUCHDOWN_HOLD_S`] while its target is at least [`GROUNDED_TARGET_LEASHES`] of
+    /// the leash below it. It needs no descent first, so a stick pushed down on a vehicle
+    /// already resting on the ground idles it: released less than a second after a touchdown,
+    /// the RealFlight QuadCopterX locked its height there and sat at hover thrust, and a later
+    /// push couldn't idle it (#441). The target condition keeps a slow sink in the air, which
+    /// the vehicle follows, from reading as a touchdown.
     fn holds_on_ground(&mut self, dt: f32, rate_mps: f32, estimated_state: &VehicleState) -> bool {
         let airborne_height_m = self.config.airborne_height_m;
         // Entering on the ground means idling there: the last setpoint idled (or guidance was
@@ -207,18 +227,26 @@ impl CopterGuidance {
                 return true;
             }
             self.hold.landed = Some(false);
-            self.hold.touchdown.reset();
+            self.hold.grounded_s = 0.0;
             return false;
         }
         if rate_mps >= 0.0 {
-            self.hold.touchdown.reset();
+            self.hold.grounded_s = 0.0;
             return false;
         }
-        if !self
-            .hold
-            .touchdown
-            .update(dt, estimated_state.velocity_mps.z)
-        {
+        let altitude_m = estimated_state.position_m.z;
+        let below_m = self.config.altitude_leash_m * GROUNDED_TARGET_LEASHES;
+        let target_below = self
+            .altitude_target_m
+            .is_some_and(|target_m| target_m <= altitude_m - below_m);
+        // `<` is false for a NaN speed: an unknown speed never reads as held still.
+        let still = estimated_state.velocity_mps.z.abs() < DEFAULT_STOPPED_MPS;
+        self.hold.grounded_s = if still && target_below {
+            self.hold.grounded_s + dt
+        } else {
+            0.0
+        };
+        if self.hold.grounded_s < DEFAULT_TOUCHDOWN_HOLD_S {
             return false;
         }
         // Down: the next climb starts from the vehicle, not from a target leashed below it.

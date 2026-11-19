@@ -14,7 +14,7 @@ use stable_flight::guidance::copter::{DEFAULT_MAX_CLIMB_MPS, DEFAULT_MAX_SINK_MP
 use stable_flight::{AltitudeHoldCommand, Command, Commander, ControlInput, VehicleState};
 use stable_flight_sim::airframes;
 
-use common::{Plant, SimLoop};
+use common::{Plant, SimLoop, TICK};
 
 /// The climb stick, set between ticks.
 #[derive(Clone, Default)]
@@ -42,9 +42,15 @@ const RATE_TOLERANCE_MPS: f32 = 0.15;
 /// ground (#343).
 const MAX_SINK_OVERSHOOT_M: f32 = 0.9;
 
-/// How long after a touchdown the motors may still run, in s: the touchdown detector holds
-/// 1 s (`TouchdownConfig::default`), and the sweep idled 1.02–1.03 s after contact (#441).
-const MAX_IDLE_DELAY_S: f32 = 1.3;
+/// How long after a touchdown the motors may still run, in s: the target runs half the 1 m
+/// leash below the stopped vehicle at 1.5 m/s, then the vehicle holds still for the 1 s
+/// touchdown hold (`DEFAULT_TOUCHDOWN_HOLD_S`); 1.34 s on the sim (#441), 0.26 s of margin.
+const MAX_IDLE_DELAY_S: f32 = 1.6;
+
+/// How long a stick pushed down on a vehicle already resting on the ground takes to idle it, in
+/// s: the target ramps up to the sink rate and runs half the leash below the ground, then the
+/// 1 s touchdown hold; 1.63 s on the sim (#441), 0.37 s of margin.
+const MAX_PUSH_IDLE_S: f32 = 2.0;
 
 fn flight() -> (SimLoop<ClimbStick>, ClimbStick) {
     let stick = ClimbStick::default();
@@ -138,4 +144,44 @@ fn a_descent_to_the_ground_idles_there() {
     let idle_s = idle_s.expect("idled");
     check!(idle_s >= contact_s);
     check!(idle_s - contact_s < MAX_IDLE_DELAY_S);
+}
+
+/// A stick let go just after touchdown locks the height on the ground, the motors still at
+/// hover thrust; pushed down again, it idles them, though the vehicle no longer descends
+/// (the RealFlight QuadCopterX released 0.8 s after contact, #441).
+#[test]
+fn a_stick_pushed_down_on_the_ground_idles() {
+    let (mut flight_loop, stick) = flight();
+    stick.0.set(1.0);
+    height_after(&mut flight_loop, 2.0);
+    stick.0.set(-1.0);
+    let mut flown_s = 0.0;
+    while flight_loop.state().position_m.z > 0.05 && flown_s < 20.0 {
+        flight_loop.step(TICK);
+        flown_s += TICK.as_secs_f32();
+    }
+    // Let go half a second after contact, before the touchdown idles the motors.
+    common::fly(&mut flight_loop, 0.5, |l, _| {
+        assert!(
+            !l.setpoint().idle(),
+            "still flying half a second after contact"
+        );
+    });
+    stick.0.set(0.0);
+    common::fly(&mut flight_loop, 3.0, |l, _| {
+        assert!(
+            !l.setpoint().idle(),
+            "let go on the ground: flying, not idle"
+        );
+    });
+
+    stick.0.set(-1.0);
+    let mut idle_s = None;
+    common::fly(&mut flight_loop, 5.0, |l, t| {
+        if idle_s.is_none() && l.setpoint().idle() {
+            idle_s = Some(t);
+        }
+    });
+    let idle_s = idle_s.expect("idled on the ground");
+    check!(idle_s < MAX_PUSH_IDLE_S, "{idle_s} s");
 }

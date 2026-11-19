@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GUID_HOLD_DZ`, `GUID_HOLD_CLMB`, `GUID_HOLD_SINK`, `GUID_HOLD_ACC`) that moves an altitude
   target its altitude loop flies. Centered, it brakes and locks the height once slower than
   `lock_speed_mps` (0.6 m/s, PX4's `MPC_HOLD_MAX_Z`; `GUID_HOLD_LOCK`), so it holds where it
-  stops even when it ran ahead of its target. On the ground a stick
+  stops even when it ran ahead of its target. A stick down idles the motors once the vehicle
+  has held still for 1 s with its target half the leash below it: the ground, whether it
+  descended there or was resting on it. On the ground a stick
   at or below the deadzone idles; a climb takes off. `PlaneGuidance` flies it as FBWA with the
   climb stick as throttle; `FailsafeCommander` and `AutotuneHold` read it as sticks.
 - `commanders::AutotuneHold` (#307): wraps the commander a copter flies and, while engaged,

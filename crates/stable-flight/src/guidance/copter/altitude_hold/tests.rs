@@ -195,7 +195,8 @@ fn entered_in_the_air_it_holds_the_height() {
 }
 
 /// The target's climb rate follows the stick at the configured acceleration, and the target
-/// stays within the leash of a vehicle that doesn't follow it.
+/// stays within the leash of a vehicle that doesn't follow it (held at 10 m, moving at a
+/// climb or sink of its own, so it doesn't read as on the ground).
 #[test]
 fn the_target_follows_the_stick_and_stays_leashed() {
     let config = CopterGuidanceConfig::default();
@@ -220,14 +221,15 @@ fn the_target_follows_the_stick_and_stays_leashed() {
     check!(-guidance.descent_speed_mps == config.altitude_hold.max_climb_mps);
     check!(guidance.altitude_target_m == Some(10.0 + config.altitude_leash_m));
     for _ in 0..(5.0 / DT) as usize {
-        guide(&mut guidance, hold(-1.0), &at(10.0, 0.0));
+        guide(&mut guidance, hold(-1.0), &at(10.0, -0.5));
     }
     check!(guidance.descent_speed_mps == config.altitude_hold.max_sink_mps);
     check!(guidance.altitude_target_m == Some(10.0 - config.altitude_leash_m));
 }
 
-/// A descent on the stick that the ground stops idles the motors there; the next climb takes
-/// off from the vehicle.
+/// A descent on the stick that the ground stops idles the motors there, once the target has
+/// run half the leash below the vehicle and the vehicle has held still for the touchdown hold;
+/// the next climb takes off from the vehicle.
 #[test]
 fn a_descent_the_ground_stops_idles_there() {
     let mut guidance = armed_on_ground();
@@ -244,9 +246,11 @@ fn a_descent_the_ground_stops_idles_there() {
         }
     }
     let idled_s = idled_s.expect("touched down");
+    // The target, leashed 1 m over the stopped vehicle, sinks to 0.5 m below it at 1.5 m/s
+    // (1 s), then the vehicle holds still for the 1 s touchdown hold.
     check!(
-        idled_s > 0.9 && idled_s < 1.2,
-        "after the touchdown hold: {idled_s} s"
+        idled_s > 1.9 && idled_s < 2.2,
+        "after the target ran below and the touchdown hold: {idled_s} s"
     );
     check!(guidance.altitude_target_m == None);
     let takeoff = guide(&mut guidance, hold(1.0), &at(0.0, 0.0));
@@ -329,4 +333,50 @@ fn a_released_climb_holds_where_the_vehicle_stops() {
     check!(guidance.altitude_target_m == Some(locked_m));
     guide(&mut guidance, hold(1.0), &at(locked_m, 0.0));
     check!(!guidance.hold.locked);
+}
+
+/// A vehicle already resting on the ground with its height locked (a stick let go less than a
+/// second after touchdown) idles once the stick is pushed down, with no descent to see
+/// (#441). A slow sink in the air, which the vehicle follows, never idles.
+#[test]
+fn a_stick_down_on_the_ground_idles_without_a_descent() {
+    let mut guidance = armed_on_ground();
+    guide(&mut guidance, hold(1.0), &at(0.0, 0.0));
+    // Released on the ground: brakes and locks the height there, flying, not idle.
+    for _ in 0..(1.0 / DT) as usize {
+        let setpoint = guide(&mut guidance, hold(0.0), &at(0.0, 0.0));
+        check!(!setpoint.idle);
+    }
+    check!(guidance.hold.locked);
+    let mut idled_s = None;
+    for tick in 0..(4.0 / DT) as usize {
+        if guide(&mut guidance, hold(-1.0), &at(0.0, 0.0)).idle {
+            idled_s = Some(tick as f32 * DT);
+            break;
+        }
+    }
+    let idled_s = idled_s.expect("idled on the ground");
+    check!(idled_s < 2.5, "{idled_s} s");
+
+    // In the air, a stick just past the deadzone sinks at 0.03 m/s; the vehicle follows the
+    // target to within a centimeter, slower than the touchdown's stopped speed, for 10 s.
+    let mut guidance = armed_on_ground();
+    guide(
+        &mut guidance,
+        ControlInput::Attitude(AttitudeCommand {
+            throttle: 0.5,
+            ..Default::default()
+        }),
+        &at(10.0, 0.0),
+    );
+    let sink_mps = CopterGuidanceConfig::default()
+        .altitude_hold
+        .climb_rate_mps(-0.216)
+        .abs();
+    let mut altitude_m = 10.0;
+    for _ in 0..(10.0 / DT) as usize {
+        let setpoint = guide(&mut guidance, hold(-0.216), &at(altitude_m, -sink_mps));
+        check!(!setpoint.idle, "a slow sink in the air");
+        altitude_m = guidance.altitude_target_m.expect("latched") + 0.01;
+    }
 }
