@@ -3,6 +3,7 @@ use stable_flight::Mixer;
 use stable_flight::Vec3;
 use stable_flight::controllers::{LateralControllerConfig, NotchConfig, YawControllerConfig};
 use stable_flight::estimation::wind::WindConfig;
+use stable_flight::guidance::copter::AltitudeHoldConfig;
 
 #[test]
 fn quadcopter_x_maps_its_four_motors_validly() {
@@ -72,6 +73,12 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         descent_accel_mps2: 1.0,
         climb_decel_mps2: 2.5,
         altitude_leash_m: 1.0,
+        altitude_hold: AltitudeHoldConfig {
+            deadzone: 0.2,
+            max_climb_mps: 2.5,
+            max_sink_mps: 1.5,
+            accel_mps2: 2.5,
+        },
         land_speed_mps: 0.7,
         waypoint_yaw_radps: 60.0_f32.to_radians(),
         heading_rate_radps: 60.0_f32.to_radians(),

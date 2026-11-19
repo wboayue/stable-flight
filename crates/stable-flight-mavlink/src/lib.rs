@@ -88,7 +88,7 @@ pub use state::{
 pub fn heartbeat(vehicle_type: MavType, armed: bool, mode: ControlMode) -> HEARTBEAT_DATA {
     let mut base_mode = match mode {
         ControlMode::Rate => MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
-        ControlMode::Attitude => {
+        ControlMode::Attitude | ControlMode::AltitudeHold => {
             MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED
                 | MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED
         }

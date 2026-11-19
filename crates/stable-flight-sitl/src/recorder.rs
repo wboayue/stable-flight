@@ -180,6 +180,7 @@ impl Columns for CopterColumns {
         };
         let stick_yaw = match &record.command.input {
             ControlInput::Attitude(c) => c.yaw,
+            ControlInput::AltitudeHold(c) => c.yaw,
             ControlInput::Rate(c) => c.yaw_rate,
             _ => nan,
         };
@@ -226,7 +227,8 @@ impl Columns for CopterColumns {
 /// rad/s (NaN for attitudes and stick-fraction rates). `sp_thrust` is linear thrust, before the
 /// stabilizer's thrust curve; `thrust` is after it. `airspeed_mps` is NaN without air data,
 /// `climb_mps` the vertical speed, up positive, and `stick_throttle` the commander's throttle
-/// (or absolute thrust), before boost, floor, and sink guard. `motor_*` are motor slots 0 and
+/// (or absolute thrust), before boost, floor, and sink guard; in altitude hold, its climb stick
+/// in `[-1, 1]`. `motor_*` are motor slots 0 and
 /// 1, `elevon_*` servo slots 0 and 1. `north_m`/`east_m` are the position, from the backend's
 /// origin (not the arming point), and `vel_north_mps`/`vel_east_mps` the ground velocity, on
 /// the frame contract's north and east axes.
@@ -257,6 +259,7 @@ impl Columns for TailsitterColumns {
         let mode = mode_code(record.flight_mode.mode);
         let stick_throttle = match &record.command.input {
             ControlInput::Attitude(c) => c.throttle,
+            ControlInput::AltitudeHold(c) => c.climb,
             ControlInput::Rate(c) => c.throttle,
             ControlInput::AbsoluteAttitude(c) => c.thrust,
             _ => nan,
