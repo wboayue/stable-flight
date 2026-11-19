@@ -8,6 +8,7 @@ use stable_flight::{
     ControlMode, FailsafeState, ModeRefusal, Saturation, TelemetryPublisher, TelemetryRecord,
 };
 
+use crate::autotune::AutotuneReport;
 use crate::{Downlink, LinkTx, MAX_FRAME_LEN, Output, ParamValue, Record, SendMessage, StatusText};
 
 #[cfg(test)]
@@ -79,6 +80,7 @@ pub struct LinkPublisher<'a, T> {
     state: Every,
     record: Option<Every>,
     replies: Option<Consumer<'a, ParamValue>>,
+    autotune: Option<Consumer<'a, AutotuneReport>>,
     max_params_per_tick: usize,
     send_errors: u32,
     /// The failsafe state last announced, to send [`Downlink::Status`] when it changes.
@@ -100,6 +102,7 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
             state: Every::new(config.state_interval),
             record: config.record_interval.map(Every::new),
             replies: None,
+            autotune: None,
             max_params_per_tick: config.max_params_per_tick,
             send_errors: 0,
             failsafe: None,
@@ -111,6 +114,13 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
     /// Sends the [`ParamServer`](crate::params::ParamServer)'s replies from `replies`.
     pub fn with_param_replies(mut self, replies: Consumer<'a, ParamValue>) -> Self {
         self.replies = Some(replies);
+        self
+    }
+
+    /// Sends the autotune reports queued on `reports` (see [`crate::autotune`]), all of them
+    /// on each tick: a run reports at most one step per update.
+    pub fn with_autotune_reports(mut self, reports: Consumer<'a, AutotuneReport>) -> Self {
+        self.autotune = Some(reports);
         self
     }
 
@@ -167,6 +177,9 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
             .is_some_and(|every| every.ready(record.dt))
         {
             self.send(&Downlink::Record(Record::from(record)));
+        }
+        while let Some(report) = self.autotune.as_mut().and_then(Consumer::dequeue) {
+            self.send(&Downlink::Autotune(report));
         }
         for _ in 0..self.max_params_per_tick {
             let Some(reply) = self.replies.as_mut().and_then(Consumer::dequeue) else {

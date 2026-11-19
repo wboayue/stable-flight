@@ -154,6 +154,8 @@ fn every_uplink_variant_round_trips() {
             value: 0.15,
         }),
         Uplink::Param(ParamRequest::List),
+        Uplink::Autotune(crate::autotune::AutotuneRequest::Start),
+        Uplink::Autotune(crate::autotune::AutotuneRequest::Stop),
     ];
     for msg in &cases {
         round_trip(msg);
@@ -230,6 +232,11 @@ fn every_downlink_variant_round_trips() {
             count: 40,
         }),
         Downlink::Status(StatusText::try_from("armed").expect("fits")),
+        Downlink::Autotune(crate::autotune::AutotuneReport {
+            stage: 3,
+            stages: 9,
+            progress: crate::autotune::AutotuneProgress::Complete,
+        }),
     ];
     for msg in &cases {
         round_trip(msg);

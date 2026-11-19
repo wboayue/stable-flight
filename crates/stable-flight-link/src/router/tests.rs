@@ -58,6 +58,30 @@ fn routes_params_and_control_to_their_queues() {
     check!(routed == controls);
 }
 
+/// Autotune requests go to their own queue, in order; without one they're dropped and counted.
+#[test]
+fn routes_autotune_requests_to_their_queue() {
+    use crate::autotune::AutotuneRequest;
+
+    let loopback = Loopback::<16>::new();
+    let (mut companion, fc) = loopback.split();
+    let mut autotune = Queue::<AutotuneRequest, 4>::new();
+    let (to_host, mut host) = autotune.split();
+    let mut router = UplinkRouter::new(fc, 16).with_autotune(to_host);
+    let requests = [AutotuneRequest::Start, AutotuneRequest::Stop];
+    send_all(&mut companion, &requests.map(Uplink::Autotune));
+
+    check!(router.poll().map(|stats| (stats.frames, stats.dropped)) == Ok((2, 0)));
+    let routed: Vec<_> = core::iter::from_fn(|| host.dequeue()).collect();
+    check!(routed == requests);
+
+    let loopback = Loopback::<16>::new();
+    let (mut companion, fc) = loopback.split();
+    let mut router = UplinkRouter::new(fc, 16);
+    send_all(&mut companion, &[Uplink::Autotune(AutotuneRequest::Start)]);
+    check!(router.poll().map(|stats| stats.dropped) == Ok(1));
+}
+
 #[test]
 fn drops_and_counts_what_has_no_room_or_no_consumer() {
     let control = Uplink::Control;
