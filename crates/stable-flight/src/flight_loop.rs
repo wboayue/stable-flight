@@ -277,6 +277,13 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
         &self.commander
     }
 
+    /// The commander, to change between ticks, e.g. to engage an
+    /// [`AutotuneHold`](crate::commanders::AutotuneHold) when a run starts. Its next command
+    /// flies on the next [`step`](Self::step).
+    pub fn commander_mut(&mut self) -> &mut C {
+        &mut self.commander
+    }
+
     /// The vehicle, e.g. to read a simulator's internals between ticks.
     pub fn vehicle(&self) -> &V {
         &self.vehicle

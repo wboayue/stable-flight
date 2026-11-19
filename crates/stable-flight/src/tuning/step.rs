@@ -84,6 +84,7 @@ impl StepConfig {
 
 /// Why a [`StepProbe`] gave up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StepAbort {
     /// The response went half a step the wrong way.
     Reversed,
