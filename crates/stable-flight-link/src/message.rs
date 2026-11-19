@@ -8,6 +8,7 @@ use stable_flight::{
     FlightRegime, Saturation, Setpoint, TelemetryRecord, VehicleState, params,
 };
 
+use crate::autotune::{AutotuneReport, AutotuneRequest};
 use crate::frame::{Message, sealed::Sealed};
 
 #[cfg(test)]
@@ -96,6 +97,8 @@ pub enum Uplink {
     /// Set a parameter or list them all; answered with [`Downlink::Param`]s. See
     /// [`ParamServer`](crate::params::ParamServer).
     Param(ParamRequest),
+    /// Start or stop an autotune; answered with [`Downlink::Autotune`] reports.
+    Autotune(AutotuneRequest),
 }
 
 /// Flight controller → companion/host.
@@ -147,6 +150,9 @@ pub enum Downlink {
     Param(ParamValue),
     /// Human-readable status text.
     Status(StatusText),
+    /// An autotune's progress: one report per step of the run, and the answers to an
+    /// [`Uplink::Autotune`].
+    Autotune(AutotuneReport),
 }
 
 impl Sealed for Uplink {}

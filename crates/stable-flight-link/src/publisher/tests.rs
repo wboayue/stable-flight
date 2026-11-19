@@ -238,6 +238,41 @@ fn sends_at_most_the_param_limit_per_tick_in_order() {
     check!(indices == [0, 1, 2, 3, 4]);
 }
 
+/// Every queued autotune report goes out on the next tick, in order.
+#[test]
+fn sends_every_queued_autotune_report() {
+    use crate::autotune::{AutotuneProgress, AutotuneReport};
+
+    let loopback = Loopback::<64>::new();
+    let (fc, mut companion) = loopback.split();
+    let mut reports = Queue::<AutotuneReport, 8>::new();
+    let (mut host, reports) = reports.split();
+    let mut publisher =
+        LinkPublisher::new(fc, LinkPublisherConfig::default()).with_autotune_reports(reports);
+    let queued =
+        [AutotuneProgress::Started, AutotuneProgress::Complete].map(|progress| AutotuneReport {
+            stage: 1,
+            stages: 9,
+            progress,
+        });
+    for report in queued {
+        host.enqueue(report).unwrap();
+    }
+
+    let autotune = |msgs: Vec<Downlink>| -> Vec<_> {
+        msgs.into_iter()
+            .filter_map(|msg| match msg {
+                Downlink::Autotune(report) => Some(report),
+                _ => None,
+            })
+            .collect()
+    };
+    publisher.publish(&tick(MS(4), false).telemetry());
+    check!(autotune(received(&mut companion)) == queued);
+    publisher.publish(&tick(MS(4), false).telemetry());
+    check!(autotune(received(&mut companion)) == []);
+}
+
 #[test]
 fn failed_sends_are_counted_not_returned() {
     let mut publisher = LinkPublisher::new(FailingLink, LinkPublisherConfig::default());

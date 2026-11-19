@@ -2,6 +2,7 @@
 
 use heapless::spsc::Producer;
 
+use crate::autotune::AutotuneRequest;
 use crate::{Control, LinkError, LinkRx, MAX_FRAME_LEN, ParamRequest, RecvMessage, Uplink};
 
 #[cfg(test)]
@@ -19,7 +20,8 @@ pub struct RouteStats {
 }
 
 /// Drains a [`LinkRx`] and routes each [`Uplink`] to its consumer's queue: params to the
-/// [`ParamServer`](crate::params::ParamServer), [`Control`] to a link-fed commander.
+/// [`ParamServer`](crate::params::ParamServer), [`Control`] to a link-fed commander, autotune
+/// requests to the host driving the autotune.
 ///
 /// Reading the link is separate from any commander so params work whichever commander flies.
 /// Call [`poll`](Self::poll) between ticks, or from a receive task: the queues decouple it
@@ -52,6 +54,7 @@ pub struct UplinkRouter<'a, R> {
     buf: [u8; MAX_FRAME_LEN],
     params: Option<Producer<'a, ParamRequest>>,
     control: Option<Producer<'a, Control>>,
+    autotune: Option<Producer<'a, AutotuneRequest>>,
     max_frames_per_poll: usize,
 }
 
@@ -59,7 +62,7 @@ impl<'a, R: LinkRx> UplinkRouter<'a, R> {
     /// A router reading `rx`, decoding at most `max_frames_per_poll` frames per
     /// [`poll`](Self::poll). Each kind of message is dropped (and counted) until a builder
     /// gives it a queue: [`with_params`](Self::with_params),
-    /// [`with_control`](Self::with_control).
+    /// [`with_control`](Self::with_control), [`with_autotune`](Self::with_autotune).
     ///
     /// # Panics
     ///
@@ -71,6 +74,7 @@ impl<'a, R: LinkRx> UplinkRouter<'a, R> {
             buf: [0; MAX_FRAME_LEN],
             params: None,
             control: None,
+            autotune: None,
             max_frames_per_poll,
         }
     }
@@ -85,6 +89,12 @@ impl<'a, R: LinkRx> UplinkRouter<'a, R> {
     /// Routes [`Uplink::Control`] messages to `control`, for a link-fed commander.
     pub fn with_control(mut self, control: Producer<'a, Control>) -> Self {
         self.control = Some(control);
+        self
+    }
+
+    /// Routes [`Uplink::Autotune`] requests to `autotune`, for the host driving an autotune.
+    pub fn with_autotune(mut self, autotune: Producer<'a, AutotuneRequest>) -> Self {
+        self.autotune = Some(autotune);
         self
     }
 
@@ -120,6 +130,7 @@ impl<'a, R: LinkRx> UplinkRouter<'a, R> {
         match msg {
             Uplink::Param(request) => offer(&mut self.params, request),
             Uplink::Control(control) => offer(&mut self.control, control),
+            Uplink::Autotune(request) => offer(&mut self.autotune, request),
         }
     }
 }
