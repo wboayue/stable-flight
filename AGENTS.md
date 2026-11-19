@@ -28,7 +28,7 @@ README owns its usage.
 | Crate | Role | Key dependencies |
 |---|---|---|
 | `stable-flight` (core) | `no_std` flight control: pipeline traits and types (`lib.rs`), `FlightLoop`, `commanders`, `composition`, `controllers`, `estimation` (`wind`), `guidance`, `stabilizers`, `mixers`, `params` (+ `params::metadata`, feature `param-metadata`), `timing`, `tuning` (autotune), `view`, `testing` (feature) | `nalgebra` (`libm`), `libm`, `thiserror`, `log`; `serde` (feature) |
-| `stable-flight-link` | `no_std` FC ⇄ companion protocol: messages, COBS frames, router, publisher, `ParamServer`, `FcLink` (wires them), `UdpLink` (`std`), `loopback` (`testing`) | core (`serde`), `postcard`, `heapless`, `cobs`, `crc` |
+| `stable-flight-link` | `no_std` FC ⇄ companion protocol: messages, COBS frames, router, publisher, `ParamServer`, `autotune` (requests, reports), `FcLink` (wires them), `UdpLink` (`std`), `loopback` (`testing`) | core (`serde`), `postcard`, `heapless`, `cobs`, `crc` |
 | `stable-flight-mavlink` | Pure builders from core values to MAVLink payloads, plus origin, home, land, and ground trackers; `testing::MockConnection` | core, `mavlink` (`emit-extensions`: struct literals need v2 extension fields) |
 | `stable-flight-bridge` | Companion binary: native link ⇄ MAVLink v2 for ground stations (FC as sysid 1/compid 1); pure `Bridge` services, `Pump` for I/O, `http` for QGC param metadata | link (`std`), core (`param-metadata`), `stable-flight-mavlink`, `mavlink`, `crc`, `serde_json`, `clap` |
 | `stable-flight-sitl` | Simulator-independent SITL: commanders (joystick, Spektrum, script), `RealTimeRunner`, `TickRate`, `ShutdownSignal`, `recorder` | core, `gilrs`, `signal-hook` |
@@ -120,7 +120,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 
 | Trait | Implementations | Crate |
 |---|---|---|
-| `Commander` | `WaypointFollower`, `FailsafeCommander<P: LinkedCommander, F: Fallback>`, `HoldCommander` (a `Fallback`) | core |
+| `Commander` | `WaypointFollower`, `FailsafeCommander<P: LinkedCommander, F: Fallback>`, `HoldCommander` (a `Fallback`), `AutotuneHold<C>` | core |
 | `Commander` | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander` | sitl |
 | `Commander` | `LinkCommander` (a `LinkedCommander`, from `FcLink::wire_linked`) | link |
 | `StateSource` + `Actuator` | `ComposedVehicle<S, A>`; `testing::NullVehicle` | core |

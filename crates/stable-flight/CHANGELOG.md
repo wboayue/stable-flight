@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `commanders::AutotuneHold` (#307): wraps the commander a copter flies and, while engaged,
+  holds it where it was, so an autotune started from a ground station's sticks (which hold no
+  height) probes a still vehicle. A disarm, a land, or a roll or pitch stick past
+  `AutotuneHoldConfig::override_stick` (0.05, PX4's) hands back and reports an override.
+- `Supervisor::revert` (#307): puts back the config a run started from, mid-run or after it
+  ended, as a disarm before completion does.
+- `FlightLoop::commander_mut` (#307), to change the commander between ticks.
+- Under `serde`, `TunedLoop`, `Gains`, and the autotune results (`Outcome`, `KeepReason`,
+  `AutotuneAbort`, `StartError`, `ProbeAbort`, `StepAbort`, `IdentifyAbort`, `DesignError`)
+  serialize, for the link's autotune reports (#307).
+
 ### Changed
 
 - **Breaking (behavior):** `WingDesign` takes the passing cell deepest along P plus deepest

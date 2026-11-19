@@ -125,6 +125,9 @@ cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight --
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 cargo run --bin link_pilot
+# The same, autotuned from the link: link_pilot starts the copter design search after its hover
+# and lands when it ends (or QGC through the bridge's MAVLink Actions, its README)
+cargo run --bin link_pilot -- --autotune
 
 # The eXplora flown from the native link, transitions included: with the bridge as a tailsitter,
 # QGC shows its VTOL state and its transition button flies it to plane and back
