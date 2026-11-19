@@ -641,3 +641,45 @@ fn forwards_the_flight_controllers_status_text_to_the_ground_station() {
     };
     check!(data.text.to_str().ok() == Some(text));
 }
+
+/// A ground station's autotune start goes to the flight controller, whose report acks it and
+/// reaches the ground station as text.
+#[test]
+fn starts_an_autotune_and_relays_its_reports() {
+    use stable_flight_link::autotune::{AutotuneProgress, AutotuneReport, AutotuneRequest};
+
+    let t0 = Instant::now();
+    let mut bridge = Bridge::new(BridgeConfig::default());
+    bridge.on_downlink(&heartbeat(true), t0, &mut Outbox::default());
+    let start = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
+        command: MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE,
+        param1: 1.0,
+        target_system: 1,
+        target_component: 1,
+        ..Default::default()
+    });
+
+    let mut out = Outbox::default();
+    bridge.on_mavlink(&GCS, &start, t0, &mut out);
+    check!(out.to_fc == [Uplink::Autotune(AutotuneRequest::Start)]);
+    check!(out.to_gcs.is_empty(), "waits for the flight controller");
+
+    let mut out = Outbox::default();
+    let report = AutotuneReport {
+        stage: 1,
+        stages: 9,
+        progress: AutotuneProgress::Started,
+    };
+    bridge.on_downlink(&Downlink::Autotune(report), t0, &mut out);
+    let [MavMessage::COMMAND_ACK(ack), MavMessage::STATUSTEXT(text)] = out.to_gcs.as_slice() else {
+        panic!("expected an ack and a STATUSTEXT, got {:?}", out.to_gcs);
+    };
+    check!(
+        (ack.command, ack.result)
+            == (
+                MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE,
+                MavResult::MAV_RESULT_ACCEPTED
+            )
+    );
+    check!(text.text.to_str().ok() == Some("AutoTune: started, 9 stages"));
+}

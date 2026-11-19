@@ -1,0 +1,18 @@
+{
+    "fileType": "MavlinkActions",
+    "version": 1,
+    "actions": [
+        {
+            "label": "Autotune start",
+            "description": "Start an autotune where the copter hovers (MAV_CMD_DO_AUTOTUNE_ENABLE, param1 1)",
+            "mavCmd": 212,
+            "param1": 1
+        },
+        {
+            "label": "Autotune stop / revert",
+            "description": "Stop the autotune, or revert its gains after it ended (MAV_CMD_DO_AUTOTUNE_ENABLE, param1 0)",
+            "mavCmd": 212,
+            "param1": 0
+        }
+    ]
+}

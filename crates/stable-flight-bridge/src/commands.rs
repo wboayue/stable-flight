@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 
 use mavlink::MavHeader;
 use mavlink::common::*;
+use stable_flight_link::autotune::{AutotuneProgress, AutotuneRequest};
+use stable_flight_link::stable_flight::tuning::autotune::StartError;
 use stable_flight_link::stable_flight::{
     ControlInput, ControlMode, FlightModeReport, FlightRegime, LandCommand, Vec2,
 };
@@ -39,6 +41,8 @@ enum Confirmation {
         requested: FlightRegime,
         flown: FlightRegime,
     },
+    /// An autotune report answering the request.
+    Autotune(AutotuneRequest),
 }
 
 impl Confirmation {
@@ -48,6 +52,31 @@ impl Confirmation {
             Confirmation::Armed(arm) => arm == armed,
             Confirmation::Mode(expected) => expected == mode,
             Confirmation::Regime { requested, .. } => flight_mode.mode.target() == requested,
+            Confirmation::Autotune(_) => false,
+        }
+    }
+
+    /// The ack an autotune report `progress` gives it, if it answers it: a start is accepted
+    /// once started, denied while disarmed, and rejected for now while a run is in progress; a
+    /// stop is accepted once reverted, or with no run to undo.
+    fn answered_by(self, progress: AutotuneProgress) -> Option<MavResult> {
+        let Confirmation::Autotune(request) = self else {
+            return None;
+        };
+        match (request, progress) {
+            (AutotuneRequest::Start, AutotuneProgress::Started) => {
+                Some(MavResult::MAV_RESULT_ACCEPTED)
+            }
+            (AutotuneRequest::Start, AutotuneProgress::Refused(StartError::NotArmed)) => {
+                Some(MavResult::MAV_RESULT_DENIED)
+            }
+            (AutotuneRequest::Start, AutotuneProgress::Refused(_)) => {
+                Some(MavResult::MAV_RESULT_TEMPORARILY_REJECTED)
+            }
+            (AutotuneRequest::Stop, AutotuneProgress::Reverted | AutotuneProgress::Idle) => {
+                Some(MavResult::MAV_RESULT_ACCEPTED)
+            }
+            _ => None,
         }
     }
 
@@ -98,9 +127,18 @@ struct Pending {
 ///   on its own (a height refusal clears once the vehicle climbs) nor blocks a retry (an
 ///   abandoned transition waits for a `Copter` request, which QGC never sends while it shows
 ///   multirotor).
+/// - `MAV_CMD_DO_AUTOTUNE_ENABLE` (a QGC MAVLink Action: QGC's autotune page is PX4's only)
+///   goes out as an [`AutotuneRequest`], with param1 as ArduPlane takes it
+///   (`GCS_MAVLINK_Plane::handle_MAV_CMD_DO_AUTOTUNE_ENABLE`): 1 starts a run with the flight
+///   controller's plan, 0 stops one, reverting to the gains it started from, mid-run or after
+///   it ended. A copter's only (`UNSUPPORTED` otherwise); any other param1, or a start while
+///   disarmed, is `DENIED`. PX4 instead answers its start `IN_PROGRESS` with a `progress`,
+///   which QGC's generic plugin can't follow (`MavCommandQueue::handleCommandAck` keeps the
+///   command pending for any firmware but PX4); progress goes out as `STATUSTEXT` instead
+///   ([`crate::autotune`]).
 ///
-/// A request that goes out is acked `ACCEPTED` only once the flight controller's heartbeat
-/// shows it (the arm state, the land mode, or the regime), and `FAILED` if it doesn't within
+/// A request that goes out is acked `ACCEPTED` only once the flight controller shows it (its
+/// heartbeat's arm state, land mode, or regime; an autotune's report), and `FAILED` if it doesn't within
 /// `ack_timeout`. QGC waits 1.2 s and never retries an arm, so the timeout stays under that.
 /// A request with no live flight controller, or while another is pending, is
 /// `TEMPORARILY_REJECTED`.
@@ -112,15 +150,19 @@ pub(crate) struct CommandService {
     ack_timeout: Duration,
     /// The vehicle flies both regimes, so it takes transitions.
     vtol: bool,
+    /// The vehicle is a copter, whose autotune the flight controller runs.
+    copter: bool,
     pending: Option<Pending>,
 }
 
 impl CommandService {
-    /// Fails an unconfirmed request after `ack_timeout`; takes transitions for a `vtol`.
-    pub(crate) fn new(ack_timeout: Duration, vtol: bool) -> Self {
+    /// Fails an unconfirmed request after `ack_timeout`; takes transitions for a `vtol` and
+    /// autotunes for a `copter`.
+    pub(crate) fn new(ack_timeout: Duration, vtol: bool, copter: bool) -> Self {
         Self {
             ack_timeout,
             vtol,
+            copter,
             pending: None,
         }
     }
@@ -139,6 +181,7 @@ impl CommandService {
             MavCmd::MAV_CMD_COMPONENT_ARM_DISARM => arm_disarm(data.param1 >= 0.5, fc),
             MavCmd::MAV_CMD_NAV_LAND => land(fc),
             MavCmd::MAV_CMD_DO_VTOL_TRANSITION => transition(data.param1, self.vtol, fc),
+            MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE => autotune(data.param1, self.copter, fc),
             _ => return false,
         };
         let request = if self.pending.is_some() {
@@ -177,6 +220,17 @@ impl CommandService {
             self.finish(pending, MavResult::MAV_RESULT_ACCEPTED, out);
         } else if pending.confirmation.refused_by(flight_mode) {
             self.finish(pending, MavResult::MAV_RESULT_FAILED, out);
+        }
+    }
+
+    /// The flight controller reported autotune `progress`: confirms or refuses a pending
+    /// autotune request it answers.
+    pub(crate) fn on_autotune(&mut self, progress: AutotuneProgress, out: &mut Outbox) {
+        let Some(pending) = self.pending else {
+            return;
+        };
+        if let Some(result) = pending.confirmation.answered_by(progress) {
+            self.finish(pending, result, out);
         }
     }
 
@@ -254,6 +308,27 @@ fn transition(param1: f32, vtol: bool, fc: Option<FcView>) -> Request {
         Uplink::Control(Control::Regime(requested)),
         Confirmation::Regime { requested, flown },
     ))
+}
+
+/// An autotune start (param1 1) or stop (param1 0), on a `copter`.
+fn autotune(param1: f32, copter: bool, fc: Option<FcView>) -> Request {
+    if !copter {
+        return Err(MavResult::MAV_RESULT_UNSUPPORTED);
+    }
+    let request = if param1 == 1.0 {
+        AutotuneRequest::Start
+    } else if param1 == 0.0 {
+        AutotuneRequest::Stop
+    } else {
+        return Err(MavResult::MAV_RESULT_DENIED);
+    };
+    let Some(fc) = fc else {
+        return Err(MavResult::MAV_RESULT_TEMPORARILY_REJECTED);
+    };
+    if request == AutotuneRequest::Start && !fc.armed {
+        return Err(MavResult::MAV_RESULT_DENIED);
+    }
+    Ok((Uplink::Autotune(request), Confirmation::Autotune(request)))
 }
 
 /// Queues an ack of `command` with `result` for `sender`.
