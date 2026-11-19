@@ -8,6 +8,7 @@
 //! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target at up to [`stick_yaw_rate_radps`](CopterGuidanceConfig::stick_yaw_rate_radps); throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
 //! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Attitude`]: roll/pitch passed through (the stabilizer saturates them); the heading replaces the heading-hold target (NaN holds it); thrust saturated to `[0, 1]`, not boosted |
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set, braking onto the waypoint along a braking curve) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading turned to the waypoint's [`heading_rad`](WaypointCommand::heading_rad) at [`heading_rate_radps`](CopterGuidanceConfig::heading_rate_radps) when set, otherwise along the leg at [`waypoint_yaw_radps`](CopterGuidanceConfig::waypoint_yaw_radps) (held on a leg shorter than [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m)), or on station turned to put a wingtip into the wind when [`wind_heading_min_mps`](CopterGuidanceConfig::wind_heading_min_mps) is set; descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), starting from the vehicle's climb (shed at [`climb_decel_mps2`](CopterGuidanceConfig::climb_decel_mps2)) or from hover, speeding up and braking to stop on the waypoint at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`altitude_leash_m`](CopterGuidanceConfig::altitude_leash_m) below the vehicle |
+//! | [`ControlInput::AltitudeHold`] | [`Setpoint::Attitude`]: roll, pitch, and yaw sticks as [`ControlInput::Attitude`]'s; the climb stick a climb rate ([`AltitudeHoldConfig`]) that moves an altitude target the altitude loop flies, leashed [`altitude_leash_m`](CopterGuidanceConfig::altitude_leash_m) from the vehicle, so a centered stick holds the height; idle on the ground until the stick climbs |
 //! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, heading held (or turned to a wingtip into the wind, as on station), with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), starting as a waypoint descent does and speeding up to it at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`altitude_leash_m`](CopterGuidanceConfig::altitude_leash_m) below the vehicle |
 //!
 //! Piloted inputs mark their setpoint [`idle`](crate::AttitudeSetpoint::idle) while the
@@ -52,9 +53,15 @@ use crate::math::{
     all_finite, assert_dt, cap_magnitude, guard_sink, saturate_throttle, saturate_unit,
     shaped_closing_speed, tilt_boost, wrap_angle,
 };
+use altitude_hold::Ground;
+pub use altitude_hold::{
+    AltitudeHoldConfig, DEFAULT_CLIMB_ACCEL_MPS2, DEFAULT_CLIMB_DEADZONE, DEFAULT_MAX_CLIMB_MPS,
+    DEFAULT_MAX_SINK_MPS,
+};
 use hover_wind::HoverWind;
 use leg_heading::LegHeading;
 
+mod altitude_hold;
 mod hover_wind;
 mod leg_heading;
 mod params;
@@ -242,8 +249,12 @@ pub struct CopterGuidanceConfig {
     /// pull, so it sinks near `max_descent_mps` instead of past it. Once the ground stops a
     /// landing vehicle, the altitude loop settles on a thrust below hover instead of winding
     /// down toward none. Higher: a harder pull down when the vehicle lags its target. Must be
-    /// positive and finite. Defaults to [`DEFAULT_ALTITUDE_LEASH_M`].
+    /// positive and finite. Defaults to [`DEFAULT_ALTITUDE_LEASH_M`]. Altitude-hold flight
+    /// leashes its target this far above the vehicle too.
     pub altitude_leash_m: f32,
+    /// How altitude-hold flight's climb stick maps to a climb rate
+    /// ([`ControlInput::AltitudeHold`]).
+    pub altitude_hold: AltitudeHoldConfig,
     /// Rate, in rad/s, at which waypoint flight turns the heading-hold target to the leg's
     /// direction, the shorter way round; `0` holds the heading the leg began with, unless
     /// [yielded](Self::heading_yield_s). A leg runs
@@ -397,8 +408,9 @@ impl Default for CopterGuidanceConfig {
     /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a climb under
     /// way when a descent starts shed at 2.5 m/s², a 0.7 m/s land, waypoint legs over 3 m
     /// turned to face along them at 60°/s, a waypoint's heading turned to at 60°/s, the
-    /// heading yielded after 1 s stuck over 30° off yawing toward it under 0.1 rad/s, full yaw stick at 1 rad/s, an idle throttle
-    /// of 0.05, a 1 m altitude leash, no wind heading (80° off the wind when on), the wind
+    /// heading yielded after 1 s stuck over 30° off yawing toward it under 0.1 rad/s, full yaw
+    /// stick at 1 rad/s, an idle throttle of 0.05, a 1 m altitude leash, the
+    /// [`AltitudeHoldConfig`] defaults, no wind heading (80° off the wind when on), the wind
     /// estimated from 1 m up, a 0.3 m/s feedforward hold band, no thrust floor or sink guard,
     /// and no boost ceiling.
     fn default() -> Self {
@@ -418,6 +430,7 @@ impl Default for CopterGuidanceConfig {
             land_speed_mps: DEFAULT_LAND_SPEED_MPS,
             climb_decel_mps2: DEFAULT_CLIMB_DECEL_MPS2,
             altitude_leash_m: DEFAULT_ALTITUDE_LEASH_M,
+            altitude_hold: AltitudeHoldConfig::default(),
             waypoint_yaw_radps: DEFAULT_WAYPOINT_YAW_RADPS,
             heading_rate_radps: DEFAULT_HEADING_RATE_RADPS,
             waypoint_yaw_min_leg_m: DEFAULT_WAYPOINT_YAW_MIN_LEG_M,
@@ -439,7 +452,8 @@ impl Default for CopterGuidanceConfig {
 impl CopterGuidanceConfig {
     /// Checks both loop configs ([`AltitudeControllerConfig::validate`],
     /// [`LateralControllerConfig::validate`]; errors carry the loop as their `section`), the
-    /// thrust limits ([`ThrustLimits::validate`], section `thrust`), that
+    /// thrust limits ([`ThrustLimits::validate`], section `thrust`), the climb stick
+    /// ([`AltitudeHoldConfig::validate`], section `altitude_hold`), that
     /// `navigation_period_s`, `max_stick_angles_rad`, and `stick_yaw_rate_radps` are
     /// non-negative and finite, that `idle_throttle` is in `[0, 1)`, that `max_tilt_rad` is in
     /// `(0, π/2)`, that `max_descent_mps`, `descent_accel_mps2`, `climb_decel_mps2`,
@@ -481,6 +495,9 @@ impl CopterGuidanceConfig {
         check_positive("descent_accel_mps2", self.descent_accel_mps2)?;
         check_positive("climb_decel_mps2", self.climb_decel_mps2)?;
         check_positive("altitude_leash_m", self.altitude_leash_m)?;
+        self.altitude_hold
+            .validate()
+            .map_err(|e| e.in_section("altitude_hold"))?;
         check(
             "land_speed_mps",
             self.land_speed_mps > DESCENDING_MPS && self.land_speed_mps.is_finite(),
@@ -564,6 +581,11 @@ pub struct CopterGuidance {
 
     /// Estimates the wind while airborne and not paused.
     wind: HoverWind,
+    /// Whether altitude-hold flight sits on the ground.
+    ground: Ground,
+    /// The last setpoint idled, or guidance was just primed: altitude-hold flight entered
+    /// low starts on the ground.
+    last_idle: bool,
 }
 
 impl CopterGuidance {
@@ -592,6 +614,8 @@ impl CopterGuidance {
             requested_accel_mps2: Vec2::zeros(),
             saturation: Saturation::default(),
             wind: HoverWind::default(),
+            ground: Ground::default(),
+            last_idle: true,
         }
     }
 
@@ -645,24 +669,35 @@ impl Guidance for CopterGuidance {
             estimated_state,
         );
 
-        if !matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_)) {
-            // The position loops are idle: clear them so re-entering waypoint mode starts
-            // fresh, runs the lateral loop at once instead of holding a stale tilt, carries no
-            // integral from an earlier leg, and starts its altitude target from the vehicle.
-            self.altitude = AltitudeController::default();
+        let navigating = matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_));
+        let holding_altitude = matches!(input, ControlInput::AltitudeHold(_));
+        if !navigating {
+            // The lateral loop is idle: clear it so re-entering waypoint mode starts fresh,
+            // runs the lateral loop at once instead of holding a stale tilt, and carries no
+            // integral from an earlier leg.
             self.lateral = LateralController::default();
             self.requested_accel_mps2 = Vec2::zeros();
-            self.altitude_target_m = None;
-            self.descent_speed_mps = 0.0;
             self.lateral_rate.reset();
-        }
-        if !matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_)) {
             self.leg_heading.reset();
         }
+        if !navigating && !holding_altitude {
+            // The altitude loop is idle too: the next waypoint, land, or altitude hold starts
+            // its altitude target from the vehicle. Between those three it carries over, so
+            // switching among them doesn't step the target.
+            self.altitude = AltitudeController::default();
+            self.altitude_target_m = None;
+            self.descent_speed_mps = 0.0;
+        }
+        if !holding_altitude {
+            self.ground.reset();
+        }
 
-        match input {
+        let setpoint = match input {
             ControlInput::Attitude(attitude_command) => {
                 Setpoint::Attitude(self.attitude_setpoint(dt, attitude_command, estimated_state))
+            }
+            ControlInput::AltitudeHold(command) => {
+                Setpoint::Attitude(self.altitude_hold(dt, command, estimated_state))
             }
             ControlInput::Rate(rate_command) => {
                 self.follow_heading(estimated_state);
@@ -686,12 +721,14 @@ impl Guidance for CopterGuidance {
             ControlInput::AbsoluteRate(command) => {
                 Setpoint::BodyRate(self.absolute_rate_setpoint(command, estimated_state))
             }
-        }
+        };
+        self.last_idle = setpoint.idle();
+        setpoint
     }
 
     /// Clears the altitude and lateral controller state, the altitude target and its descent,
-    /// the leg, and any held waypoint tilt, and latches the current heading as the yaw-hold
-    /// target. Primed on the ground (no more than
+    /// the leg, any held waypoint tilt, and altitude-hold flight's ground state, and latches the
+    /// current heading as the yaw-hold target. Primed on the ground (no more than
     /// [`airborne_height_m`](CopterGuidanceConfig::airborne_height_m) above the last
     /// ground altitude, or never primed), it also latches the ground altitude and forgets the
     /// wind; primed in the air (a VTOL back in hover), it keeps both. Re-armed on ground more
@@ -710,6 +747,8 @@ impl Guidance for CopterGuidance {
         self.tilt_capped = false;
         self.requested_accel_mps2 = Vec2::zeros();
         self.saturation = Saturation::default();
+        self.ground.reset();
+        self.last_idle = true;
     }
 
     /// `tilt` when the waypoint tilt request was capped at
@@ -743,12 +782,11 @@ impl CopterGuidance {
         attitude_command: &AttitudeCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        // Commands from input devices can be out of range or NaN; saturate rather than panic
-        // (see `crate::math`).
-        let yaw = saturate_unit(attitude_command.yaw);
-        let max_stick = self.config.max_stick_angles_rad;
-        self.set_heading_target(
-            self.heading + yaw * self.config.stick_yaw_rate_radps * dt,
+        let tilt_rad = self.stick_tilt(
+            dt,
+            attitude_command.roll,
+            attitude_command.pitch,
+            attitude_command.yaw,
             estimated_state,
         );
 
@@ -761,13 +799,38 @@ impl CopterGuidance {
         let (thrust, idle) = self.hold_piloted(throttle, boosted, estimated_state.velocity_mps.z);
 
         AttitudeSetpoint {
-            roll_rad: saturate_unit(attitude_command.roll) * max_stick.x,
-            pitch_rad: saturate_unit(attitude_command.pitch) * max_stick.y,
+            roll_rad: tilt_rad.x,
+            pitch_rad: tilt_rad.y,
             heading_rad: self.heading,
             thrust,
             transition: false,
             idle,
         }
+    }
+
+    /// The roll and pitch, in radians, that the `roll` and `pitch` sticks ask for (scaled to
+    /// [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad)), slewing the
+    /// heading-hold target with the `yaw` stick at up to
+    /// [`stick_yaw_rate_radps`](CopterGuidanceConfig::stick_yaw_rate_radps). Sticks from input
+    /// devices can be out of range or NaN: they saturate, NaN centered (see `crate::math`).
+    fn stick_tilt(
+        &mut self,
+        dt: f32,
+        roll: f32,
+        pitch: f32,
+        yaw: f32,
+        estimated_state: &VehicleState,
+    ) -> Vec2 {
+        let yaw = saturate_unit(yaw);
+        self.set_heading_target(
+            self.heading + yaw * self.config.stick_yaw_rate_radps * dt,
+            estimated_state,
+        );
+        let max_stick = self.config.max_stick_angles_rad;
+        Vec2::new(
+            saturate_unit(roll) * max_stick.x,
+            saturate_unit(pitch) * max_stick.y,
+        )
     }
 
     /// Rate flight: tracks the vehicle so attitude or waypoint flight holds the heading it has
@@ -1012,6 +1075,30 @@ impl CopterGuidance {
         self.set_heading_target(self.heading, estimated_state);
         let tilt_rad = self.tilt_toward(dt, waypoint_command, estimated_state);
 
+        let thrust = self.altitude_thrust(dt, target, estimated_state);
+        self.saturation.tilt = self.tilt_capped;
+
+        AttitudeSetpoint {
+            roll_rad: tilt_rad.x,
+            pitch_rad: tilt_rad.y,
+            heading_rad: self.heading,
+            thrust,
+            transition: false,
+            // Never ground idle: the altitude loop's zero is a vehicle in the air shedding
+            // climb. TODO(#395): idle once a land detector reports a touchdown.
+            idle: false,
+        }
+    }
+
+    /// The altitude loop's thrust toward `target`, raised to
+    /// [`min_thrust`](ThrustLimits::min_thrust), flagging `thrust` when the loop clipped or
+    /// the floor raised it.
+    fn altitude_thrust(
+        &mut self,
+        dt: f32,
+        target: AltitudeTarget,
+        estimated_state: &VehicleState,
+    ) -> f32 {
         let linear_thrust = self.altitude.control(
             &self.config.altitude,
             dt,
@@ -1022,21 +1109,9 @@ impl CopterGuidance {
                 attitude: estimated_state.attitude,
             },
         );
-
         // The altitude loop clamps its thrust to [0, 1]; landing on a bound means it clipped.
         self.saturation.thrust = linear_thrust <= 0.0 || linear_thrust >= 1.0;
-        self.saturation.tilt = self.tilt_capped;
-
-        AttitudeSetpoint {
-            roll_rad: tilt_rad.x,
-            pitch_rad: tilt_rad.y,
-            heading_rad: self.heading,
-            thrust: self.floor_thrust(linear_thrust),
-            transition: false,
-            // Never ground idle: the altitude loop's zero is a vehicle in the air shedding
-            // climb. TODO(#395): idle once a land detector reports a touchdown.
-            idle: false,
-        }
+        self.floor_thrust(linear_thrust)
     }
 
     /// Saturates a thrust request to `[0, 1]` (NaN means none), flagging `thrust` when it

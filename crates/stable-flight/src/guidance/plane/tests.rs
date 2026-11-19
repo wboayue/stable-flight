@@ -3,8 +3,8 @@ use assert2::check;
 
 use super::*;
 use crate::{
-    AbsoluteAttitudeCommand, AbsoluteRateCommand, AttitudeCommand, FlightMode, LandCommand,
-    ModeRefusal, RateCommand, Vec2, WaypointCommand,
+    AbsoluteAttitudeCommand, AbsoluteRateCommand, AltitudeHoldCommand, AttitudeCommand, FlightMode,
+    LandCommand, ModeRefusal, RateCommand, Vec2, WaypointCommand,
 };
 
 fn guide(input: ControlInput) -> Setpoint {
@@ -44,6 +44,36 @@ fn sticks_map_to_bank_and_asymmetric_pitch() {
         assert_relative_eq!(setpoint.roll_rad.to_degrees(), bank, epsilon = 1e-4);
         assert_relative_eq!(setpoint.pitch_rad.to_degrees(), pitch_deg, epsilon = 1e-4);
         check!(setpoint.thrust == thrust);
+    }
+}
+
+/// Altitude-hold sticks fly FBWA with the climb stick as throttle, `[-1, 1]` onto `[0, 1]`: the
+/// thrust the same ground-station stick gives attitude flight.
+#[test]
+fn altitude_hold_sticks_fly_fbwa_on_the_climb_stick() {
+    // (climb, expected thrust)
+    let cases = [
+        (0.0, 0.5),
+        (1.0, 1.0),
+        (-1.0, 0.0),
+        (0.5, 0.75),
+        (3.0, 1.0),
+        (f32::NAN, 0.5),
+    ];
+    for (climb, thrust) in cases {
+        let input = ControlInput::AltitudeHold(AltitudeHoldCommand {
+            climb,
+            roll: 1.0,
+            pitch: 1.0,
+            yaw: 0.0,
+        });
+        let Setpoint::Plane(setpoint) = guide(input) else {
+            panic!("altitude hold gives a plane attitude");
+        };
+        let Setpoint::Plane(attitude) = guide(sticks(1.0, 1.0, thrust)) else {
+            unreachable!("sticks give a plane attitude");
+        };
+        check!(setpoint == attitude, "climb {climb}");
     }
 }
 

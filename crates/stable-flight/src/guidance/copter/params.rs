@@ -55,6 +55,10 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_WND_AX_SPD", wind.max_axial_speed_mps),
         param!("GUID_ALT_IBAND", altitude.integration_band_m),
         param!("GUID_LAT_BRK_SHR", lateral.braking_share),
+        param!("GUID_HOLD_DZ", altitude_hold.deadzone),
+        param!("GUID_HOLD_CLMB", altitude_hold.max_climb_mps),
+        param!("GUID_HOLD_SINK", altitude_hold.max_sink_mps),
+        param!("GUID_HOLD_ACC", altitude_hold.accel_mps2),
     ];
 }
 
@@ -342,6 +346,28 @@ mod metadata {
                 )
                 .above(0.0)
                 .at_most(1.0),
+            STICKS
+                .param(
+                    "GUID_HOLD_DZ",
+                    "Climb stick travel from center that holds the height in altitude hold",
+                )
+                .at_least(0.0)
+                .below(1.0),
+            STICKS
+                .param("GUID_HOLD_CLMB", "Climb rate at full up stick in altitude hold")
+                .with_units("m/s")
+                .above(0.0),
+            STICKS
+                .param("GUID_HOLD_SINK", "Sink rate at full down stick in altitude hold")
+                .with_units("m/s")
+                .above(0.0),
+            STICKS
+                .param(
+                    "GUID_HOLD_ACC",
+                    "Acceleration the climb rate follows the stick at in altitude hold",
+                )
+                .with_units("m/s/s")
+                .above(0.0),
         ];
     }
 }

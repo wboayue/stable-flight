@@ -80,6 +80,9 @@
 //! | `GUID_STICK_YAW` | `stick_yaw_rate_radps` |
 //! | `GUID_THR_IDLE` | `idle_throttle` |
 //! | `GUID_ALT_LEASH` | `altitude_leash_m` |
+//! | `GUID_HOLD_DZ` | `altitude_hold.deadzone` |
+//! | `GUID_HOLD_CLMB`, `_SINK` | `altitude_hold.max_climb_mps`, `.max_sink_mps` (m/s) |
+//! | `GUID_HOLD_ACC` | `altitude_hold.accel_mps2` (m/s²) |
 //! | `GUID_WND_HDG_OFF` | `wind_heading_from_wind_rad` |
 //! | `GUID_WND_HDG_SD` | `wind_heading_max_sd_rad` |
 //! | `GUID_WND_HDG_DB` | `wind_heading_deadband_rad` |

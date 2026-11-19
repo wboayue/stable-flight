@@ -51,6 +51,13 @@ impl HoverWind {
         self.estimator.estimate()
     }
 
+    /// Whether `state` is no more than `airborne_height_m` above the ground altitude: `false`
+    /// before any prime, when the ground isn't known.
+    pub(crate) fn on_ground(&self, airborne_height_m: f32, state: &VehicleState) -> bool {
+        self.ground_altitude_m
+            .is_some_and(|ground_m| state.position_m.z <= ground_m + airborne_height_m)
+    }
+
     /// Whether `state` is more than `airborne_height_m` above the ground altitude.
     fn airborne(&self, airborne_height_m: f32, state: &VehicleState) -> bool {
         self.ground_altitude_m

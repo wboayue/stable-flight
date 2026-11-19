@@ -659,6 +659,8 @@ fn a_dropout_while_waiting_restarts_the_stick_reference() {
 
 #[test]
 fn stick_movement_counts_any_axis_and_a_change_of_kind() {
+    let hold =
+        |climb: f32, roll: f32| ControlInput::AltitudeHold(altitude_hold_sticks(climb, roll));
     let rate = |throttle: f32, yaw_rate: f32| {
         ControlInput::Rate(RateCommand {
             throttle,
@@ -678,6 +680,20 @@ fn stick_movement_counts_any_axis_and_a_change_of_kind() {
         ("roll past delta", sticks(0.5, 0.0), sticks(0.5, -0.2), true),
         ("rate yaw past delta", rate(0.5, 0.0), rate(0.5, 0.3), true),
         ("attitude to rate", sticks(0.5, 0.0), rate(0.5, 0.0), true),
+        ("climb within delta", hold(0.0, 0.0), hold(0.05, 0.0), false),
+        ("climb past delta", hold(0.0, 0.0), hold(0.3, 0.0), true),
+        (
+            "altitude hold roll past delta",
+            hold(0.0, 0.0),
+            hold(0.0, 0.2),
+            true,
+        ),
+        (
+            "attitude to altitude hold",
+            sticks(0.5, 0.0),
+            hold(0.0, 0.0),
+            true,
+        ),
         (
             "NaN never moves",
             sticks(f32::NAN, 0.0),
@@ -940,5 +956,13 @@ fn the_hold_finishes_a_land_the_link_dropped() {
             link.synced.get() == Some(false),
             "{scenario}: the primary synced"
         );
+    }
+}
+
+fn altitude_hold_sticks(climb: f32, roll: f32) -> crate::AltitudeHoldCommand {
+    crate::AltitudeHoldCommand {
+        climb,
+        roll,
+        ..Default::default()
     }
 }
