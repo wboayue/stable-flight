@@ -1811,12 +1811,7 @@ impl<K: Side> Supervisor<K> {
             return Some(AutotuneEvent::Complete);
         }
         if !flight_loop.armed() {
-            flight_loop.stop_probe::<K::Target>();
-            if let Some(run_start) = self.run_start {
-                restore(flight_loop, run_start);
-            }
-            self.phase = Phase::Reverted;
-            return Some(AutotuneEvent::Reverted);
+            return Some(self.revert_to_start(flight_loop));
         }
         if self.state_stale {
             self.stale_s += dt;
@@ -2076,13 +2071,12 @@ impl<K: Side> Supervisor<K> {
         if matches!(self.phase, Phase::Idle | Phase::Reverted) {
             return None;
         }
-        let run_start = self.run_start?;
-        flight_loop.stop_probe::<K::Target>();
-        restore(flight_loop, run_start);
-        self.last_good = Some(run_start);
-        self.committed = Some(run_start);
-        self.phase = Phase::Reverted;
-        Some(AutotuneEvent::Reverted)
+        Some(self.revert_to_start(flight_loop))
+    }
+
+    /// How many stages the plan holds.
+    pub fn stages(&self) -> usize {
+        self.stages
     }
 
     /// Where the run stands.
@@ -2480,6 +2474,23 @@ impl<K: Side> Supervisor<K> {
 
     /// Ends the run at `stage`: stops its probe and puts back the config as of the last kept
     /// stage.
+    /// Stops the running probe and puts back the config at [`start`](Self::start), which
+    /// every later stage then reverts to: the end of a run disarmed before completion or
+    /// [`revert`](Self::revert)ed.
+    fn revert_to_start<C, V, G, S: SideTunable<K>, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+    ) -> Event<K> {
+        flight_loop.stop_probe::<K::Target>();
+        if let Some(run_start) = self.run_start {
+            restore(flight_loop, run_start);
+            self.last_good = Some(run_start);
+            self.committed = Some(run_start);
+        }
+        self.phase = Phase::Reverted;
+        AutotuneEvent::Reverted
+    }
+
     fn fail<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,

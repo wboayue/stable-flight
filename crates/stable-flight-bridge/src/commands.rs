@@ -14,6 +14,7 @@ use stable_flight_link::{Control, Uplink};
 use crate::encode;
 use crate::outbox::Outbox;
 use crate::setpoints;
+use crate::vehicle::VehicleKind;
 
 #[cfg(test)]
 mod tests;
@@ -129,17 +130,17 @@ struct Pending {
 ///   multirotor).
 /// - `MAV_CMD_DO_AUTOTUNE_ENABLE` (a QGC MAVLink Action: QGC's autotune page is PX4's only)
 ///   goes out as an [`AutotuneRequest`], with param1 as ArduPlane takes it
-///   (`GCS_MAVLINK_Plane::handle_MAV_CMD_DO_AUTOTUNE_ENABLE`): 1 starts a run with the flight
-///   controller's plan, 0 stops one, reverting to the gains it started from, mid-run or after
-///   it ended. A copter's only (`UNSUPPORTED` otherwise); any other param1, or a start while
-///   disarmed, is `DENIED`. PX4 instead answers its start `IN_PROGRESS` with a `progress`,
+///   (`GCS_MAVLINK_Plane::handle_MAV_CMD_DO_AUTOTUNE_ENABLE`): any non-zero value starts a run
+///   with the flight controller's plan, 0 stops one, reverting to the gains it started from,
+///   mid-run or after it ended. A copter's only (`UNSUPPORTED` otherwise); a NaN param1, or a
+///   start while disarmed, is `DENIED`. PX4 instead answers its start `IN_PROGRESS` with a `progress`,
 ///   which QGC's generic plugin can't follow (`MavCommandQueue::handleCommandAck` keeps the
 ///   command pending for any firmware but PX4); progress goes out as `STATUSTEXT` instead
 ///   ([`crate::autotune`]).
 ///
 /// A request that goes out is acked `ACCEPTED` only once the flight controller shows it (its
-/// heartbeat's arm state, land mode, or regime; an autotune's report), and `FAILED` if it doesn't within
-/// `ack_timeout`. QGC waits 1.2 s and never retries an arm, so the timeout stays under that.
+/// heartbeat's arm state, land mode, or regime; an autotune's report), and `FAILED` if it
+/// doesn't within `ack_timeout`. QGC waits 1.2 s and never retries an arm, so the timeout stays under that.
 /// A request with no live flight controller, or while another is pending, is
 /// `TEMPORARILY_REJECTED`.
 ///
@@ -149,20 +150,17 @@ struct Pending {
 pub(crate) struct CommandService {
     ack_timeout: Duration,
     /// The vehicle flies both regimes, so it takes transitions.
-    vtol: bool,
-    /// The vehicle is a copter, whose autotune the flight controller runs.
-    copter: bool,
+    /// What the vehicle is: a VTOL takes transitions, a copter autotunes.
+    vehicle: VehicleKind,
     pending: Option<Pending>,
 }
 
 impl CommandService {
-    /// Fails an unconfirmed request after `ack_timeout`; takes transitions for a `vtol` and
-    /// autotunes for a `copter`.
-    pub(crate) fn new(ack_timeout: Duration, vtol: bool, copter: bool) -> Self {
+    /// Fails an unconfirmed request after `ack_timeout`; takes the commands `vehicle` flies.
+    pub(crate) fn new(ack_timeout: Duration, vehicle: VehicleKind) -> Self {
         Self {
             ack_timeout,
-            vtol,
-            copter,
+            vehicle,
             pending: None,
         }
     }
@@ -180,8 +178,12 @@ impl CommandService {
         let request = match data.command {
             MavCmd::MAV_CMD_COMPONENT_ARM_DISARM => arm_disarm(data.param1 >= 0.5, fc),
             MavCmd::MAV_CMD_NAV_LAND => land(fc),
-            MavCmd::MAV_CMD_DO_VTOL_TRANSITION => transition(data.param1, self.vtol, fc),
-            MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE => autotune(data.param1, self.copter, fc),
+            MavCmd::MAV_CMD_DO_VTOL_TRANSITION => {
+                transition(data.param1, self.vehicle.is_vtol(), fc)
+            }
+            MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE => {
+                autotune(data.param1, self.vehicle == VehicleKind::Copter, fc)
+            }
             _ => return false,
         };
         let request = if self.pending.is_some() {
@@ -310,17 +312,17 @@ fn transition(param1: f32, vtol: bool, fc: Option<FcView>) -> Request {
     ))
 }
 
-/// An autotune start (param1 1) or stop (param1 0), on a `copter`.
+/// An autotune start (param1 non-zero) or stop (param1 0), on a `copter`.
 fn autotune(param1: f32, copter: bool, fc: Option<FcView>) -> Request {
     if !copter {
         return Err(MavResult::MAV_RESULT_UNSUPPORTED);
     }
-    let request = if param1 == 1.0 {
-        AutotuneRequest::Start
+    let request = if param1.is_nan() {
+        return Err(MavResult::MAV_RESULT_DENIED);
     } else if param1 == 0.0 {
         AutotuneRequest::Stop
     } else {
-        return Err(MavResult::MAV_RESULT_DENIED);
+        AutotuneRequest::Start
     };
     let Some(fc) = fc else {
         return Err(MavResult::MAV_RESULT_TEMPORARILY_REJECTED);

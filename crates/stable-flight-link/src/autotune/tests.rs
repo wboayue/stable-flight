@@ -125,6 +125,53 @@ fn numbers_the_stage_from_the_status() {
     }
 }
 
+/// An event's stage is the one it ran in, from the status before the update that returned it;
+/// completion counts every stage, and a revert none.
+#[test]
+fn numbers_an_event_from_the_status_before_it() {
+    let roll = TunedLoop::Roll;
+    let running = AutotuneStatus::Running {
+        stage: 2,
+        target: roll,
+    };
+    let done = AutotuneEvent::StageDone {
+        target: roll,
+        gains: GAINS,
+        outcome: Outcome::Tuned,
+        steps: None,
+        baseline: None,
+    };
+    let rows = [
+        ("stage done", done, running, 3),
+        (
+            "stage failed",
+            AutotuneEvent::StageFailed {
+                target: roll,
+                reason: AutotuneAbort::Rate,
+            },
+            running,
+            3,
+        ),
+        (
+            "stage started",
+            AutotuneEvent::StageStarted(roll),
+            AutotuneStatus::Settling { stage: 3 },
+            4,
+        ),
+        (
+            "complete",
+            AutotuneEvent::Complete,
+            AutotuneStatus::Complete,
+            9,
+        ),
+        ("disarmed mid-run", AutotuneEvent::Reverted, running, 0),
+    ];
+    for (case, event, before, stage) in rows {
+        let report = AutotuneReport::from_event(&event, before, 9).expect("reported");
+        check!(report.stage == stage, "{case}");
+    }
+}
+
 /// Every request and every progress round-trips through a frame, well within
 /// [`MAX_FRAME_LEN`].
 #[test]

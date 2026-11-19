@@ -1,21 +1,27 @@
 //! Autotune over the link: a ground station starts or stops a run ([`AutotuneRequest`]), and
 //! the flight controller reports its progress ([`AutotuneReport`]). The flight controller's
-//! host drives its [`Autotune`](stable_flight::tuning::autotune::Autotune) supervisor: it takes
-//! requests from [`FcPoller::autotune_request`](crate::fc::FcPoller::autotune_request) and
-//! hands reports to [`FcPoller::report_autotune`](crate::fc::FcPoller::report_autotune).
+//! host drives its [`Autotune`] supervisor between ticks with [`serve`]: it takes the requests
+//! from [`FcPoller::autotune_request`], flies the run from an [`AutotuneHold`], and hands each
+//! step to [`FcPoller::report_autotune`].
 
 use serde::{Deserialize, Serialize};
+use stable_flight::commanders::AutotuneHold;
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::{
-    AutotuneAbort, AutotuneEvent, AutotuneStatus, Outcome, StartError,
+    Autotune, AutotuneAbort, AutotuneEvent, AutotuneStatus, CopterSide, Outcome, SideTunable,
+    StartError,
 };
+use stable_flight::{Commander, FlightLoop};
+
+use crate::LinkRx;
+use crate::fc::FcPoller;
 
 #[cfg(test)]
 mod tests;
 
-/// What a ground station asks of the flight controller's autotune: [`Uplink::Autotune`](crate::Uplink::Autotune).
-/// The flight controller picks the plan (its airframe's), so a ground station can't run one
+/// What a ground station asks of the flight controller's autotune:
+/// [`Uplink::Autotune`](crate::Uplink::Autotune). The flight controller picks the plan (its airframe's), so a ground station can't run one
 /// meant for another size of vehicle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AutotuneRequest {
@@ -28,7 +34,8 @@ pub enum AutotuneRequest {
     Stop,
 }
 
-/// One step of a run, compact enough for the link: [`Downlink::Autotune`](crate::Downlink::Autotune).
+/// One step of a run, compact enough for the link:
+/// [`Downlink::Autotune`](crate::Downlink::Autotune).
 ///
 /// # Examples
 ///
@@ -50,8 +57,9 @@ pub enum AutotuneRequest {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AutotuneReport {
-    /// The stage it concerns, 1-based; every stage after completion, 0 when none (before a
-    /// start, refused, reverted).
+    /// The stage it concerns, 1-based: the stage a step ran in, the first on a start, every
+    /// stage on completion, the running one when a start is refused mid-run, 0 when none
+    /// (refused before a start, reverted, nothing to stop).
     pub stage: u8,
     /// The plan's stage count.
     pub stages: u8,
@@ -113,8 +121,8 @@ pub enum AutotuneProgress {
 }
 
 impl AutotuneReport {
-    /// `progress` with the stage from `status`, the supervisor's status after it, in a plan of
-    /// `stages` stages (saturating at 255).
+    /// `progress` with the stage from `status`, the supervisor's status once it happened, in a
+    /// plan of `stages` stages (saturating at 255): the answer to a request.
     pub fn new(progress: AutotuneProgress, status: AutotuneStatus, stages: usize) -> Self {
         let stages = saturate(stages);
         let stage = match status {
@@ -131,12 +139,14 @@ impl AutotuneReport {
         }
     }
 
-    /// The report of `event`, with the stage from `status` (as in [`new`](Self::new)); `None`
-    /// for a probe's measurement ([`AutotuneEvent::Measured`], [`AutotuneEvent::Stalled`]),
-    /// whose data is too large for the link and only of use on the flight controller's log.
+    /// The report of `event`, with the stage from `before`, the supervisor's status before the
+    /// [`update`](Autotune::update) that returned it: after a stage's last step the supervisor
+    /// has moved on to the next stage. A revert concerns no stage (0). `None` for a probe's
+    /// measurement ([`AutotuneEvent::Measured`], [`AutotuneEvent::Stalled`]), whose data is too
+    /// large for the link and only of use on the flight controller's log.
     pub fn from_event(
         event: &AutotuneEvent,
-        status: AutotuneStatus,
+        before: AutotuneStatus,
         stages: usize,
     ) -> Option<Self> {
         let progress = match *event {
@@ -167,13 +177,157 @@ impl AutotuneReport {
                 AutotuneProgress::StageFailed { target, reason }
             }
             AutotuneEvent::Complete => AutotuneProgress::Complete,
-            AutotuneEvent::Reverted => AutotuneProgress::Reverted,
+            AutotuneEvent::Reverted => {
+                return Some(Self::new(
+                    AutotuneProgress::Reverted,
+                    AutotuneStatus::Reverted,
+                    stages,
+                ));
+            }
             AutotuneEvent::Measured { .. } | AutotuneEvent::Stalled { .. } => return None,
             // `AutotuneEvent` is non-exhaustive: a new event isn't reported until mapped here.
             _ => return None,
         };
-        Some(Self::new(progress, status, stages))
+        Some(Self::new(progress, before, stages))
     }
+}
+
+/// What one [`serve`] did, for the host to log.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Served {
+    /// The answer to the last request served (several in one call are rare), or
+    /// [`AutotuneProgress::Reverted`] when the pilot's sticks took over.
+    pub answer: Option<AutotuneProgress>,
+    /// What the run's update did ([`Autotune::update`]), measurements included.
+    pub event: Option<AutotuneEvent>,
+    /// Reports the full queue dropped: the publisher hasn't run for several.
+    pub dropped: u32,
+}
+
+/// Runs `autotune` between ticks for a flight controller flown from the link, from an
+/// [`AutotuneHold`] around its commander, reporting each step down the link:
+///
+/// 1. Serves `poller`'s requests: a [`Start`](AutotuneRequest::Start) starts the run and
+///    [engages](AutotuneHold::engage) the hold where the vehicle is (or is refused); a
+///    [`Stop`](AutotuneRequest::Stop) releases the hold and [reverts](Autotune::revert) the
+///    run.
+/// 2. Reverts the run when the pilot took over from the hold
+///    ([`take_override`](AutotuneHold::take_override)).
+/// 3. Advances the run by `dt` s, releasing the hold once it ends.
+///
+/// Each answer and step goes to [`FcPoller::report_autotune`]. The host still tells the
+/// supervisor about its own timing ([`Autotune::note_stall`], [`Autotune::set_host_slow`],
+/// [`Autotune::set_state_stale`]) and logs what [`Served`] returns.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_link::autotune::{AutotuneRequest, serve};
+/// use stable_flight_link::fc::{FcLink, FcLinkConfig};
+/// use stable_flight_link::loopback::Loopback;
+/// use stable_flight_link::stable_flight::commanders::{AutotuneHold, AutotuneHoldConfig};
+/// use stable_flight_link::stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+/// use stable_flight_link::stable_flight::mixers::TableMixer;
+/// use stable_flight_link::stable_flight::stabilizers::copter::{
+///     CopterStabilizer, CopterStabilizerConfig,
+/// };
+/// use stable_flight_link::stable_flight::testing::{ConstantCommander, NullVehicle};
+/// use stable_flight_link::stable_flight::tuning::autotune::{Autotune, Envelope, StagePlan};
+/// use stable_flight_link::stable_flight::FlightLoop;
+/// use stable_flight_link::{MAX_FRAME_LEN, SendMessage, Uplink};
+///
+/// let loopback = Loopback::<16>::new();
+/// let (mut companion, fc_end) = loopback.split();
+/// let (rx, tx) = fc_end.into_halves();
+/// let mut link = FcLink::<16, 8>::new();
+/// let (mut poller, telemetry) = link.wire_with(rx, tx, FcLinkConfig::default());
+/// let commander = AutotuneHold::new(ConstantCommander::default(), AutotuneHoldConfig::default())?;
+/// let mut flight_loop = FlightLoop::new(
+///     commander,
+///     NullVehicle::default(),
+///     CopterGuidance::new(CopterGuidanceConfig::default()),
+///     CopterStabilizer::new(CopterStabilizerConfig::default()),
+///     TableMixer::quad_x(),
+///     telemetry,
+/// );
+/// let mut autotune = Autotune::new(&StagePlan::copter_design_search(), Envelope::default())?;
+///
+/// companion.send_message(&Uplink::Autotune(AutotuneRequest::Start), &mut [0u8; MAX_FRAME_LEN])?;
+/// poller.poll(&mut flight_loop)?;
+/// // Between ticks: the disarmed vehicle refuses the start.
+/// let served = serve(&mut poller, &mut autotune, &mut flight_loop, 0.004);
+/// assert!(served.answer.is_some());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn serve<R, C, V, G, S, M, T>(
+    poller: &mut FcPoller<'_, R>,
+    autotune: &mut Autotune,
+    flight_loop: &mut FlightLoop<AutotuneHold<C>, V, G, S, M, T>,
+    dt: f32,
+) -> Served
+where
+    R: LinkRx,
+    C: Commander,
+    S: SideTunable<CopterSide>,
+{
+    let stages = autotune.stages();
+    let mut served = Served {
+        answer: None,
+        event: None,
+        dropped: 0,
+    };
+    let mut report = |poller: &mut FcPoller<'_, R>, report: AutotuneReport| {
+        if !poller.report_autotune(report) {
+            served.dropped += 1;
+        }
+    };
+
+    while let Some(request) = poller.autotune_request() {
+        let answer = match request {
+            AutotuneRequest::Start => match autotune.start(flight_loop) {
+                Ok(()) => {
+                    let state = flight_loop.state().clone();
+                    flight_loop.commander_mut().engage(&state);
+                    AutotuneProgress::Started
+                }
+                Err(refused) => AutotuneProgress::Refused(refused),
+            },
+            AutotuneRequest::Stop => {
+                flight_loop.commander_mut().release();
+                match autotune.revert(flight_loop) {
+                    Some(_) => AutotuneProgress::Reverted,
+                    None => AutotuneProgress::Idle,
+                }
+            }
+        };
+        report(
+            poller,
+            AutotuneReport::new(answer, autotune.status(), stages),
+        );
+        served.answer = Some(answer);
+    }
+
+    if flight_loop.commander_mut().take_override() && autotune.revert(flight_loop).is_some() {
+        let answer = AutotuneProgress::Reverted;
+        report(
+            poller,
+            AutotuneReport::new(answer, autotune.status(), stages),
+        );
+        served.answer = Some(answer);
+    }
+
+    let before = autotune.status();
+    let event = autotune.update(flight_loop, dt);
+    if event.is_some() && !autotune.is_running() {
+        flight_loop.commander_mut().release();
+    }
+    if let Some(step) = event
+        .as_ref()
+        .and_then(|e| AutotuneReport::from_event(e, before, stages))
+    {
+        report(poller, step);
+    }
+    Served { event, ..served }
 }
 
 fn saturate(count: usize) -> u8 {

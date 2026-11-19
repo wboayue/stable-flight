@@ -140,11 +140,7 @@ impl Bridge {
                 config.heartbeat_interval,
                 config.metadata,
             ),
-            commands: CommandService::new(
-                config.arm_ack_timeout,
-                config.vehicle.is_vtol(),
-                config.vehicle == VehicleKind::Copter,
-            ),
+            commands: CommandService::new(config.arm_ack_timeout, config.vehicle),
             setpoints: SetpointService::new(config.offboard_speed_mps),
             state: StateService::new(
                 config.earth,
