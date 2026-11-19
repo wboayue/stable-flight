@@ -30,6 +30,9 @@ Code comments and docs link here instead of redefining a term.
   and the loops hold them; centered sticks fly level.
 - **Acro:** stick mode where the sticks command rotation rates; centered sticks hold the
   current attitude.
+- **Altitude hold:** copter stick mode where the throttle stick commands a climb rate instead
+  of thrust: centered holds the height, up climbs, down sinks (ArduPilot's AltHold, PX4's
+  Altitude mode). The other sticks command attitude as usual. `ControlInput::AltitudeHold`.
 - **Maneuver:** a scripted sequence of body-rate segments flown by `ManeuverRunner` (a roll,
   a loop, a doublet), then a recovery to level.
 - **Path hold:** a maneuver segment's steering back onto its path (a roll's line, a loop's

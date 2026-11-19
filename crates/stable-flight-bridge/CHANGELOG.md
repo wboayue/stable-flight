@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `MANUAL_CONTROL`'s throttle is a climb rate by default
+  (`--throttle climb`, #441): forwarded as `ControlInput::AltitudeHold`, centered (z 500, QGC's
+  virtual joystick released) holding the height. `--throttle thrust` keeps the throttle as
+  collective thrust, for a stick that stays where it's left.
 - **Breaking:** speaks link `PROTOCOL_VERSION` 11 (#307); pair it with flight controllers
   built on the same link release.
 

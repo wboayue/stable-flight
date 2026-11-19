@@ -64,7 +64,7 @@ cargo fmt --all
 just embedded                                 # no_std check on thumbv7em-none-eabihf: core (plain, testing, serde, param-metadata), link (plain, testing), sim; then fw-build
 just fw-build | fw-size | fw-bin | fw-flash   # ARK FPV firmware: release build, flash/RAM size, raw binary, USB DFU flash
 just cover                                    # tarpaulin → tarpaulin-report.html (.tarpaulin.toml)
-just bridge                                   # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed/--vehicle-type)
+just bridge                                   # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed/--vehicle-type/--throttle)
 just fly-manual | fly-auto | fly-autotune      # RealFlight QuadCopterX: joystick, waypoint script, autotune (--airframe titan-cobra)
 just fly-companion | link-pilot                # copter flown from the link; link_pilot plays the companion (or just bridge + QGC)
 just fly-tailsitter | fly-tailsitter-auto | fly-tailsitter-companion  # RealFlight eXplora: joystick, script, link
@@ -97,7 +97,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 
 - `Commander` → `Command { arm, regime, input }`. `arm` gates the motors; `regime` requests a
   `FlightRegime` (guidance owns the flown `FlightMode`); `input` is a `ControlInput`:
-  `Attitude`, `Rate`, `Waypoint`, `AbsoluteAttitude`, `Land`, or `AbsoluteRate`.
+  `Attitude`, `Rate`, `Waypoint`, `AbsoluteAttitude`, `Land`, `AbsoluteRate`, or
+  `AltitudeHold`.
 - `Vehicle` = `StateSource` + `Actuator` (blanket-implemented: implement those two, never
   `Vehicle`). `VehicleState` rustdoc holds the frame contract; `Vehicle` rustdoc the timing
   contract.

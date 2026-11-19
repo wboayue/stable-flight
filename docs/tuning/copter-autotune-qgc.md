@@ -41,11 +41,11 @@ just fly-companion   # the QuadCopterX in RealFlight, flown from the link
 just bridge          # link ⇄ MAVLink for QGC on UDP 14550
 ```
 
-1. **Arm and take off** on the virtual joystick. A centered throttle asks for thrust 0.5,
-   which the QuadCopterX can't hover on (it needs about 0.82), so released the copter sinks
-   ([#441](https://github.com/wboayue/stable-flight/issues/441)). Until that's fixed, turn
-   off **Auto-Center Throttle** under Virtual Joystick, so the throttle stays where you leave
-   it, and set it about 80% up, then adjust until the copter holds its height.
+1. **Arm and take off** on the virtual joystick. The bridge reads its throttle as a climb
+   rate (`--throttle climb`, the default): released, the stick centers and the copter holds
+   its height; push it up to climb (up to 2.5 m/s), down to sink (up to 1.5 m/s). On the
+   ground the motors idle until the stick goes up past the deadzone. Leave **Auto-Center
+   Throttle** on, its default.
 2. **Hover** a few meters up, sticks still.
 3. **Start:** Actions → **Autotune start**. The flight controller holds the copter where it is
    for the whole run, whatever the throttle stick says, and QGC shows **AutoTune: started, 9
@@ -55,7 +55,8 @@ just bridge          # link ⇄ MAVLink for QGC on UDP 14550
    [#296](https://github.com/wboayue/stable-flight/issues/296)). **AutoTune: complete: keep,
    or stop to revert** ends it; the tuned gains fly from then on, and the hold hands the copter
    back to the sticks.
-6. **Land** on the throttle stick and disarm.
+6. **Land:** hold the throttle stick down; the motors idle about a second after the copter
+   touches down. Disarm.
 
 ## Reading the messages
 
@@ -95,7 +96,8 @@ Nothing is saved on the flight controller.
 - **Autotune stop / revert** mid-run puts back the gains from before the run and hands the
   copter back to the sticks.
 - **Moving the roll or pitch stick** past 5% of full deflection does the same: the pilot takes over,
-  as in PX4. Mind the throttle stick: the copter flies on it again at once.
+  as in PX4. The sticks fly the copter again at once; with the bridge's `--throttle thrust`,
+  so does the throttle stick's thrust.
 - **Disarming** before completion reverts the run too.
 - **Losing the link** doesn't stop the run: the hold keeps the copter where it was, and the
   flight controller's failsafe keeps holding if the link stays quiet.

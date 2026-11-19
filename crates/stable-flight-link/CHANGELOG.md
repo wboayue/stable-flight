@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Carries `ControlInput::AltitudeHold` and `ControlMode::AltitudeHold` (#441), in the same
+  `PROTOCOL_VERSION` 11.
 - Autotune over the link (#307): `Uplink::Autotune(AutotuneRequest::{Start, Stop})` and
   `Downlink::Autotune(AutotuneReport)`, each step of a run without its measurements
   (`AutotuneReport::from_event`) and the answers to a request. `FcLink` routes the requests to

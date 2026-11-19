@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ControlInput::AltitudeHold` and `ControlMode::AltitudeHold` (#441): attitude sticks with a
+  climb-rate stick, as ArduPilot's AltHold flies. `CopterGuidance` turns the stick into a climb
+  rate (`AltitudeHoldConfig`: a 0.2 deadzone, 2.5 m/s up, 1.5 m/s down, 2.5 m/s²; params
+  `GUID_HOLD_DZ`, `GUID_HOLD_CLMB`, `GUID_HOLD_SINK`, `GUID_HOLD_ACC`) that moves an altitude
+  target its altitude loop flies, so a centered stick holds the height. On the ground a stick
+  at or below the deadzone idles; a climb takes off. `PlaneGuidance` flies it as FBWA with the
+  climb stick as throttle; `FailsafeCommander` and `AutotuneHold` read it as sticks.
 - `commanders::AutotuneHold` (#307): wraps the commander a copter flies and, while engaged,
   holds it where it was, so an autotune started from a ground station's sticks (which hold no
   height) probes a still vehicle. A disarm, a land, or a roll or pitch stick past
@@ -23,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `CopterGuidanceConfig::altitude_hold` (#441): struct literals add it (or
+  `..Default::default()`).
 - **Breaking (behavior):** `WingDesign` takes the passing cell deepest along P plus deepest
   along I, where it took the one deepest in every direction at once. On the X-Plane Alia 250's
   roll that pick tied along a band of P and took its first cell, designing P 0.005 to 0.482
