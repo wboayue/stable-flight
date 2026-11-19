@@ -93,12 +93,18 @@ const MAX_STATUSTEXT_LEN: usize = 50;
 /// events the pilot should notice (e.g. a failsafe handover). Text past 50 bytes is cut at a
 /// character boundary.
 pub(crate) fn statustext(text: &str) -> STATUSTEXT_DATA {
+    statustext_at(text, MavSeverity::MAV_SEVERITY_WARNING)
+}
+
+/// As [`statustext`], at `severity`. QGC pops up `ERROR` and above, speaks `NOTICE` and above,
+/// and lists every severity in its messages (`Vehicle::_textMessageReceived`).
+pub(crate) fn statustext_at(text: &str, severity: MavSeverity) -> STATUSTEXT_DATA {
     let mut end = text.len().min(MAX_STATUSTEXT_LEN);
     while !text.is_char_boundary(end) {
         end -= 1;
     }
     STATUSTEXT_DATA {
-        severity: MavSeverity::MAV_SEVERITY_WARNING,
+        severity,
         text: text[..end].into(),
         ..Default::default()
     }

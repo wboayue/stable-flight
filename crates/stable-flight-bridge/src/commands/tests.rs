@@ -100,7 +100,7 @@ fn answers_each_request_by_the_flight_controllers_state() {
         ),
     ];
     for (case, param1, param2, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, false);
+        let mut service = CommandService::new(TIMEOUT, false, true);
         let mut out = Outbox::default();
         let handled = service.on_command_long(
             &GCS,
@@ -150,7 +150,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
     for (case, heartbeats, poll_ms, expected) in cases {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
-        let mut service = CommandService::new(TIMEOUT, false);
+        let mut service = CommandService::new(TIMEOUT, false, true);
         service.on_command_long(
             &GCS,
             &arm_disarm(1.0, 0.0),
@@ -179,7 +179,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
 #[test]
 fn rejects_a_second_request_while_one_is_pending() {
     let t0 = Instant::now();
-    let mut service = CommandService::new(TIMEOUT, false);
+    let mut service = CommandService::new(TIMEOUT, false, true);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &arm_disarm(1.0, 0.0), fc(false), t0, &mut out);
     service.on_command_long(&GCS, &arm_disarm(0.0, 0.0), fc(false), t0, &mut out);
@@ -193,7 +193,7 @@ fn rejects_a_second_request_while_one_is_pending() {
 
 #[test]
 fn leaves_other_commands_to_the_caller() {
-    let mut service = CommandService::new(TIMEOUT, false);
+    let mut service = CommandService::new(TIMEOUT, false, true);
     let mut out = Outbox::default();
     let data = COMMAND_LONG_DATA {
         command: MavCmd::MAV_CMD_NAV_TAKEOFF,
@@ -257,7 +257,7 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
         ),
     ];
     for (case, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, false);
+        let mut service = CommandService::new(TIMEOUT, false, true);
         let mut out = Outbox::default();
         check!(
             service.on_command_long(&GCS, &nav_land(), fc, Instant::now(), &mut out),
@@ -275,7 +275,7 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
 fn acks_a_land_once_the_heartbeat_shows_the_land_mode() {
     let t0 = Instant::now();
     let ms = Duration::from_millis;
-    let mut service = CommandService::new(TIMEOUT, false);
+    let mut service = CommandService::new(TIMEOUT, false, true);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &nav_land(), fc(true), t0, &mut out);
     check!(out.to_gcs.is_empty(), "pending");
@@ -293,7 +293,7 @@ fn acks_a_land_once_the_heartbeat_shows_the_land_mode() {
     check!(acks_of(MavCmd::MAV_CMD_NAV_LAND, &out) == [MavResult::MAV_RESULT_ACCEPTED]);
 
     // A land that never shows fails at the timeout.
-    let mut service = CommandService::new(TIMEOUT, false);
+    let mut service = CommandService::new(TIMEOUT, false, true);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &nav_land(), fc(true), t0, &mut out);
     service.on_fc_heartbeat(true, ControlMode::Attitude, COPTER, &mut out);
@@ -410,7 +410,7 @@ fn sends_a_transition_by_the_vehicle_and_its_regime() {
         ),
     ];
     for (case, is_vtol, state, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, is_vtol);
+        let mut service = CommandService::new(TIMEOUT, is_vtol, true);
         let mut out = Outbox::default();
         check!(
             service.on_command_long(&GCS, &transition(state), fc, Instant::now(), &mut out),
@@ -470,7 +470,7 @@ fn acks_a_transition_once_shown_and_withdraws_one_refused_or_unconfirmed() {
     for (case, heartbeats, poll_ms, expected, withdrawn) in cases {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
-        let mut service = CommandService::new(TIMEOUT, true);
+        let mut service = CommandService::new(TIMEOUT, true, true);
         let mut sent = Outbox::default();
         let fw = transition(MavVtolState::MAV_VTOL_STATE_FW);
         service.on_command_long(&GCS, &fw, vtol(true, Copter), t0, &mut sent);
@@ -488,5 +488,169 @@ fn acks_a_transition_once_shown_and_withdraws_one_refused_or_unconfirmed() {
         );
         let withdrawal = withdrawn.then(|| regime(FlightRegime::Copter));
         check!(out.to_fc == Vec::from_iter(withdrawal), "{case}");
+    }
+}
+
+fn autotune_enable(param1: f32) -> COMMAND_LONG_DATA {
+    COMMAND_LONG_DATA {
+        command: MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE,
+        param1,
+        target_system: 1,
+        target_component: 1,
+        ..Default::default()
+    }
+}
+
+/// An autotune start or stop goes out on a live copter's flight controller; others are acked at
+/// once by the request and the vehicle.
+#[test]
+fn answers_each_autotune_request_by_the_vehicle() {
+    use MavResult::*;
+    // (case, param1, copter, FC, expected uplink, immediate ack)
+    let cases = [
+        (
+            "start",
+            1.0,
+            true,
+            fc(true),
+            Some(AutotuneRequest::Start),
+            None,
+        ),
+        (
+            "stop",
+            0.0,
+            true,
+            fc(true),
+            Some(AutotuneRequest::Stop),
+            None,
+        ),
+        (
+            "stop disarmed",
+            0.0,
+            true,
+            fc(false),
+            Some(AutotuneRequest::Stop),
+            None,
+        ),
+        (
+            "start disarmed",
+            1.0,
+            true,
+            fc(false),
+            None,
+            Some(MAV_RESULT_DENIED),
+        ),
+        (
+            "other param1",
+            2.0,
+            true,
+            fc(true),
+            None,
+            Some(MAV_RESULT_DENIED),
+        ),
+        (
+            "NaN param1",
+            f32::NAN,
+            true,
+            fc(true),
+            None,
+            Some(MAV_RESULT_DENIED),
+        ),
+        (
+            "no FC",
+            1.0,
+            true,
+            None,
+            None,
+            Some(MAV_RESULT_TEMPORARILY_REJECTED),
+        ),
+        (
+            "not a copter",
+            1.0,
+            false,
+            fc(true),
+            None,
+            Some(MAV_RESULT_UNSUPPORTED),
+        ),
+    ];
+    for (case, param1, copter, fc, uplink, ack) in cases {
+        let mut service = CommandService::new(TIMEOUT, !copter, copter);
+        let mut out = Outbox::default();
+        let handled =
+            service.on_command_long(&GCS, &autotune_enable(param1), fc, Instant::now(), &mut out);
+
+        check!(handled, "{case}");
+        let expected: Vec<_> = uplink.map(Uplink::Autotune).into_iter().collect();
+        check!(out.to_fc == expected, "{case}");
+        let acks = acks_of(MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE, &out);
+        check!(acks == Vec::from_iter(ack), "{case}");
+    }
+}
+
+/// A sent autotune request is acked by the report that answers it, once; other reports, and
+/// heartbeats, leave it pending until the timeout fails it.
+#[test]
+fn acks_an_autotune_request_on_its_report() {
+    use AutotuneProgress::*;
+    use MavResult::*;
+    let stage = AutotuneProgress::StageStarted(
+        stable_flight_link::stable_flight::stabilizers::copter::TunedLoop::RollRate,
+    );
+    // (case, param1, reports, expected acks)
+    let cases: [(&str, f32, &[AutotuneProgress], &[MavResult]); 8] = [
+        ("started", 1.0, &[Started], &[MAV_RESULT_ACCEPTED]),
+        (
+            "disarmed",
+            1.0,
+            &[Refused(StartError::NotArmed)],
+            &[MAV_RESULT_DENIED],
+        ),
+        (
+            "already running",
+            1.0,
+            &[Refused(StartError::Running)],
+            &[MAV_RESULT_TEMPORARILY_REJECTED],
+        ),
+        (
+            "start ignores a stage",
+            1.0,
+            &[stage, Started],
+            &[MAV_RESULT_ACCEPTED],
+        ),
+        (
+            "start ignores a revert",
+            1.0,
+            &[Reverted],
+            &[MAV_RESULT_FAILED],
+        ),
+        (
+            "reverted",
+            0.0,
+            &[Reverted, Reverted],
+            &[MAV_RESULT_ACCEPTED],
+        ),
+        ("nothing to stop", 0.0, &[Idle], &[MAV_RESULT_ACCEPTED]),
+        (
+            "stop ignores a start",
+            0.0,
+            &[Started],
+            &[MAV_RESULT_FAILED],
+        ),
+    ];
+    for (case, param1, reports, expected) in cases {
+        let t0 = Instant::now();
+        let mut service = CommandService::new(TIMEOUT, false, true);
+        let mut out = Outbox::default();
+        service.on_command_long(&GCS, &autotune_enable(param1), fc(true), t0, &mut out);
+        out.to_fc.clear();
+        for &progress in reports {
+            service.on_autotune(progress, &mut out);
+            service.on_fc_heartbeat(true, ControlMode::Attitude, COPTER, &mut out);
+        }
+        service.poll(t0 + TIMEOUT, &mut out);
+
+        let acks = acks_of(MavCmd::MAV_CMD_DO_AUTOTUNE_ENABLE, &out);
+        check!(acks == expected, "{case}");
+        check!(out.to_fc.is_empty(), "{case}: nothing withdrawn");
     }
 }

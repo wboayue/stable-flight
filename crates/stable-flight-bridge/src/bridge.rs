@@ -10,6 +10,7 @@ use stable_flight_link::stable_flight::{ControlMode, FlightModeReport};
 use stable_flight_link::{Control, Downlink, Uplink};
 use stable_flight_mavlink::FlatEarth;
 
+use crate::autotune;
 use crate::commands::{CommandService, FcView};
 use crate::connect::ConnectService;
 use crate::encode;
@@ -139,7 +140,11 @@ impl Bridge {
                 config.heartbeat_interval,
                 config.metadata,
             ),
-            commands: CommandService::new(config.arm_ack_timeout, config.vehicle.is_vtol()),
+            commands: CommandService::new(
+                config.arm_ack_timeout,
+                config.vehicle.is_vtol(),
+                config.vehicle == VehicleKind::Copter,
+            ),
             setpoints: SetpointService::new(config.offboard_speed_mps),
             state: StateService::new(
                 config.earth,
@@ -203,6 +208,11 @@ impl Bridge {
             Downlink::Status(text) => {
                 out.to_gcs
                     .push(MavMessage::STATUSTEXT(encode::statustext(text.as_str())));
+            }
+            Downlink::Autotune(report) => {
+                self.commands.on_autotune(report.progress, out);
+                out.to_gcs
+                    .extend(autotune::statustext(report).map(MavMessage::STATUSTEXT));
             }
             _ => {}
         }
