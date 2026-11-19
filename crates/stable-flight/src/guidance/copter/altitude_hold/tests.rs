@@ -96,6 +96,13 @@ fn config_validation() {
                 ..good
             },
         ),
+        (
+            "lock_speed_mps",
+            AltitudeHoldConfig {
+                lock_speed_mps: 0.0,
+                ..good
+            },
+        ),
     ];
     for (field, config) in rows {
         let error = config.validate().expect_err("invalid");
@@ -280,4 +287,46 @@ fn a_nan_altitude_holds_hover() {
     let hover = CopterGuidanceConfig::default().altitude.hover_thrust;
     check!(setpoint.thrust == hover);
     check!(guidance.altitude_target_m == None);
+}
+
+/// Let go after a climb that ran ahead of its target, as the RealFlight QuadCopterX did on a
+/// host running ticks slow (#441), the vehicle brakes with the target on it and holds the
+/// height it slows at, not the target it ran ahead of: it doesn't sink back.
+#[test]
+fn a_released_climb_holds_where_the_vehicle_stops() {
+    let config = CopterGuidanceConfig::default();
+    let mut guidance = armed_on_ground();
+    let hover = ControlInput::Attitude(AttitudeCommand {
+        throttle: config.altitude.hover_thrust,
+        ..Default::default()
+    });
+    guide(&mut guidance, hover, &at(10.0, 0.0));
+    // A second's climb on the stick, the vehicle 0.4 m over the target the whole way.
+    let ticks = (1.0 / DT).round() as usize;
+    for tick in 0..ticks {
+        let target_m = guidance.altitude_target_m.unwrap_or(10.0);
+        guide(&mut guidance, hold(0.6), &at(target_m + 0.4, 0.6));
+        check!(!guidance.hold.locked, "tick {tick}");
+    }
+    let released_m = guidance.altitude_target_m.expect("latched") + 0.4;
+
+    // Released: braking, the target sits on the vehicle until it is slow.
+    guide(&mut guidance, hold(0.0), &at(released_m, 0.8));
+    check!(guidance.altitude_target_m == Some(released_m));
+    check!(!guidance.hold.locked);
+    for _ in 0..ticks {
+        guide(&mut guidance, hold(0.0), &at(released_m + 0.05, 0.3));
+    }
+    check!(
+        guidance.hold.locked,
+        "slower than lock_speed_mps once the rate fell to 0"
+    );
+    let locked_m = guidance.altitude_target_m.expect("locked");
+    check!(locked_m == released_m + 0.05, "the height it slowed at");
+
+    // Locked, the target holds while the vehicle drifts; a climb unlocks it.
+    guide(&mut guidance, hold(0.0), &at(released_m - 0.2, -0.1));
+    check!(guidance.altitude_target_m == Some(locked_m));
+    guide(&mut guidance, hold(1.0), &at(locked_m, 0.0));
+    check!(!guidance.hold.locked);
 }

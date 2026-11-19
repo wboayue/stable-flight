@@ -38,7 +38,7 @@ const MAX_HOLD_DRIFT_M: f32 = 0.05;
 const RATE_TOLERANCE_MPS: f32 = 0.15;
 
 /// How far the vehicle may sink past where a full-down stick is let go, in m: 0.62 m on the
-/// sweep (#441), with 0.3 m of margin. A sink past this is the direction that ends in the
+/// sweep and 0.65 m braking to the height lock (#441), with 0.25 m of margin. A sink past this is the direction that ends in the
 /// ground (#343).
 const MAX_SINK_OVERSHOOT_M: f32 = 0.9;
 

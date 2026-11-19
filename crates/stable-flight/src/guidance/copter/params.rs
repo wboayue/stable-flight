@@ -59,6 +59,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_HOLD_CLMB", altitude_hold.max_climb_mps),
         param!("GUID_HOLD_SINK", altitude_hold.max_sink_mps),
         param!("GUID_HOLD_ACC", altitude_hold.accel_mps2),
+        param!("GUID_HOLD_LOCK", altitude_hold.lock_speed_mps),
     ];
 }
 
@@ -367,6 +368,13 @@ mod metadata {
                     "Acceleration the climb rate follows the stick at in altitude hold",
                 )
                 .with_units("m/s/s")
+                .above(0.0),
+            STICKS
+                .param(
+                    "GUID_HOLD_LOCK",
+                    "Vertical speed under which a centered climb stick locks the height",
+                )
+                .with_units("m/s")
                 .above(0.0),
         ];
     }

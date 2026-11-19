@@ -78,6 +78,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             max_climb_mps: 2.5,
             max_sink_mps: 1.5,
             accel_mps2: 2.5,
+            lock_speed_mps: 0.6,
         },
         land_speed_mps: 0.7,
         waypoint_yaw_radps: 60.0_f32.to_radians(),

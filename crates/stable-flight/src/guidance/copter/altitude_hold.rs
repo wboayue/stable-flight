@@ -1,6 +1,7 @@
 //! Altitude-hold flight ([`ControlInput::AltitudeHold`](crate::ControlInput::AltitudeHold)):
 //! the climb stick sets a climb rate, an altitude target moves at it, and the altitude loop
-//! flies the target, so a centered stick holds the height. Its settings: [`AltitudeHoldConfig`].
+//! flies the target; let go, the vehicle brakes and holds the height it stops at. Its
+//! settings: [`AltitudeHoldConfig`].
 
 use crate::commanders::TouchdownDetector;
 use crate::controllers::{AltitudeTarget, InvalidConfig, check, check_positive};
@@ -28,6 +29,10 @@ pub const DEFAULT_MAX_SINK_MPS: f32 = 1.5;
 
 /// Default [`AltitudeHoldConfig::accel_mps2`]: ArduPilot's `PILOT_ACC_Z`, 2.5 m/s².
 pub const DEFAULT_CLIMB_ACCEL_MPS2: f32 = 2.5;
+
+/// Default [`AltitudeHoldConfig::lock_speed_mps`]: PX4's `MPC_HOLD_MAX_Z`, 0.6 m/s
+/// (`FlightTaskManualAltitude::_updateAltitudeLock`).
+pub const DEFAULT_LOCK_SPEED_MPS: f32 = 0.6;
 
 /// How the climb stick of altitude-hold flight maps to a climb rate, as ArduPilot's AltHold
 /// maps its throttle: linear past a deadzone around center, to the top rate at either end
@@ -61,24 +66,34 @@ pub struct AltitudeHoldConfig {
     /// stick, larger thrust steps when it moves. Must be positive and finite. Defaults to
     /// [`DEFAULT_CLIMB_ACCEL_MPS2`].
     pub accel_mps2: f32,
+    /// Vertical speed, in m/s, under which a vehicle braking after the stick returns to center
+    /// holds the height it is at, as PX4's Altitude mode locks it. Until then the target follows
+    /// the vehicle and only the climb rate it brakes along is fed forward, so whatever the
+    /// vehicle ran ahead of or behind its target while climbing is dropped: a host whose ticks
+    /// run slow in wall time moves the target slower than the rate fed forward, and the
+    /// RealFlight QuadCopterX, released from a climb at 180 ticks/s of a nominal 250, sank 0.4 m
+    /// back to its target (#441). Higher: locks sooner, stopping further past where the stick
+    /// was let go. Must be positive and finite. Defaults to [`DEFAULT_LOCK_SPEED_MPS`].
+    pub lock_speed_mps: f32,
 }
 
 impl Default for AltitudeHoldConfig {
     /// ArduPilot's AltHold deadzone, climb, and acceleration (0.2, 2.5 m/s, 2.5 m/s²), and PX4's
-    /// 1.5 m/s sink.
+    /// 1.5 m/s sink and 0.6 m/s lock.
     fn default() -> Self {
         Self {
             deadzone: DEFAULT_CLIMB_DEADZONE,
             max_climb_mps: DEFAULT_MAX_CLIMB_MPS,
             max_sink_mps: DEFAULT_MAX_SINK_MPS,
             accel_mps2: DEFAULT_CLIMB_ACCEL_MPS2,
+            lock_speed_mps: DEFAULT_LOCK_SPEED_MPS,
         }
     }
 }
 
 impl AltitudeHoldConfig {
-    /// Checks that `deadzone` is in `[0, 1)` and the rates and acceleration are positive and
-    /// finite.
+    /// Checks that `deadzone` is in `[0, 1)` and the rates, acceleration, and lock speed are
+    /// positive and finite.
     ///
     /// # Errors
     ///
@@ -87,7 +102,8 @@ impl AltitudeHoldConfig {
         check("deadzone", (0.0..1.0).contains(&self.deadzone), "in [0, 1)")?;
         check_positive("max_climb_mps", self.max_climb_mps)?;
         check_positive("max_sink_mps", self.max_sink_mps)?;
-        check_positive("accel_mps2", self.accel_mps2)
+        check_positive("accel_mps2", self.accel_mps2)?;
+        check_positive("lock_speed_mps", self.lock_speed_mps)
     }
 
     /// The climb rate the climb `stick` asks for, in m/s, up positive: 0 inside the deadzone,
@@ -104,29 +120,34 @@ impl AltitudeHoldConfig {
     }
 }
 
-/// Whether an altitude-hold vehicle is on the ground, where a stick at or below the deadzone
-/// idles the motors (ArduPilot's `Mode::get_alt_hold_state_D_ms`).
+/// Altitude-hold flight's own state: whether the vehicle is on the ground, where a stick at or
+/// below the deadzone idles the motors (ArduPilot's `Mode::get_alt_hold_state_D_ms`), and
+/// whether a centered stick has locked the height.
 #[derive(Debug, Default, Clone)]
-pub(super) struct Ground {
+pub(super) struct HoldState {
     /// `None` until altitude-hold flight starts, which reads it from the height above the
     /// ground the guidance was primed on.
     landed: Option<bool>,
     /// Reads a touchdown at the end of a descent on the stick.
     touchdown: TouchdownDetector,
+    /// The stick is centered and the vehicle slowed enough to hold the height it was at.
+    locked: bool,
 }
 
-impl Ground {
+impl HoldState {
     /// Forgets it, for when altitude-hold flight ends.
     pub(super) fn reset(&mut self) {
         self.landed = None;
         self.touchdown.reset();
+        self.locked = false;
     }
 }
 
 impl CopterGuidance {
     /// Altitude-hold flight: the roll, pitch, and yaw sticks as attitude flight's, and the
     /// climb stick's rate ([`AltitudeHoldConfig::climb_rate_mps`]) moving an altitude target
-    /// that the altitude loop flies, the rate fed forward.
+    /// that the altitude loop flies, the rate fed forward. Centered, it brakes and locks the
+    /// height ([`climb_target`](Self::climb_target)).
     ///
     /// On the ground, a stick at or below the deadzone idles the motors, and above it the
     /// vehicle takes off. On the ground means: entering altitude-hold flight idle (or just
@@ -180,40 +201,47 @@ impl CopterGuidance {
         // low isn't landed: its last setpoint flew.
         let landed_on_entry =
             self.last_idle && self.wind.on_ground(airborne_height_m, estimated_state);
-        let landed = *self.ground.landed.get_or_insert(landed_on_entry);
+        let landed = *self.hold.landed.get_or_insert(landed_on_entry);
         if landed {
             if rate_mps <= 0.0 {
                 return true;
             }
-            self.ground.landed = Some(false);
-            self.ground.touchdown.reset();
+            self.hold.landed = Some(false);
+            self.hold.touchdown.reset();
             return false;
         }
         if rate_mps >= 0.0 {
-            self.ground.touchdown.reset();
+            self.hold.touchdown.reset();
             return false;
         }
         if !self
-            .ground
+            .hold
             .touchdown
             .update(dt, estimated_state.velocity_mps.z)
         {
             return false;
         }
         // Down: the next climb starts from the vehicle, not from a target leashed below it.
-        self.ground.landed = Some(true);
+        self.hold.landed = Some(true);
         self.altitude_target_m = None;
         self.descent_speed_mps = 0.0;
         true
     }
 
-    /// The altitude target for a climb (up positive) of `rate_mps`: the latched target, or the
-    /// vehicle's `altitude_m` with its `climb_mps` (as a descent starts,
-    /// [`descent_start_m`](Self::descent_start_m)), moved at a rate that follows `rate_mps` at
-    /// up to [`AltitudeHoldConfig::accel_mps2`], and leashed
-    /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m) above or below the
-    /// vehicle, so a vehicle that can't keep up isn't left far behind its target. A NaN
-    /// target holds hover (the altitude loop's input policy) until the altitude is finite.
+    /// The altitude target for a climb (up positive) of `rate_mps`. Its rate follows `rate_mps`
+    /// at up to [`AltitudeHoldConfig::accel_mps2`], starting from the vehicle's `climb_mps` (as
+    /// a descent starts, [`descent_start_m`](Self::descent_start_m)), and is fed forward.
+    ///
+    /// - Climbing or sinking on the stick, the target moves from where it was (the vehicle's
+    ///   `altitude_m` when first latched) at that rate, leashed
+    ///   [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m) above or below the
+    ///   vehicle, so a vehicle that can't keep up isn't left far behind it.
+    /// - Centered, the vehicle brakes: the target sits on the vehicle while its rate falls to 0,
+    ///   so only the braking rate is flown, and once the vehicle is slower than
+    ///   [`AltitudeHoldConfig::lock_speed_mps`] the height it is at is held, as PX4's Altitude
+    ///   mode locks it (`FlightTaskManualAltitude::_updateAltitudeLock`).
+    ///
+    /// A NaN target holds hover (the altitude loop's input policy) until the altitude is finite.
     fn climb_target(
         &mut self,
         dt: f32,
@@ -227,14 +255,24 @@ impl CopterGuidance {
                 velocity_mps: 0.0,
             };
         };
-        let step_mps = self.config.altitude_hold.accel_mps2 * dt;
+        let config = &self.config.altitude_hold;
+        let step_mps = config.accel_mps2 * dt;
         let last_mps = -self.descent_speed_mps;
         let velocity_mps = last_mps + (rate_mps - last_mps).clamp(-step_mps, step_mps);
-        let leash_m = self.config.altitude_leash_m;
-        // `max` then `min`, not `clamp`: they pass a NaN altitude's bounds without panicking.
-        let target_m = (start_m + velocity_mps * dt)
-            .max(altitude_m - leash_m)
-            .min(altitude_m + leash_m);
+        let target_m = if rate_mps != 0.0 {
+            self.hold.locked = false;
+            let leash_m = self.config.altitude_leash_m;
+            // `max` then `min`, not `clamp`: they pass a NaN altitude's bounds without panicking.
+            (start_m + velocity_mps * dt)
+                .max(altitude_m - leash_m)
+                .min(altitude_m + leash_m)
+        } else if self.hold.locked {
+            start_m
+        } else {
+            // `<` is false for a NaN climb: braking goes on until the climb reads slow.
+            self.hold.locked = velocity_mps == 0.0 && climb_mps.abs() < config.lock_speed_mps;
+            altitude_m
+        };
         self.altitude_target_m = Some(target_m).filter(|t| t.is_finite());
         self.descent_speed_mps = -velocity_mps;
         AltitudeTarget {
