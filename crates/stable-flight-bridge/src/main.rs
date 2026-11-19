@@ -45,6 +45,7 @@ use cli::{parse_origin, parse_speed};
 use idle::IdleBackoff;
 use metadata::{ComponentMetadata, MetadataFiles, base_url, copter_params};
 use pump::Pump;
+use setpoints::ThrottleMode;
 use vehicle::VehicleKind;
 
 /// Bridges a flight controller's native link to a MAVLink ground station.
@@ -83,6 +84,11 @@ struct Args {
     /// command, and a tailsitter's hover attitude.
     #[arg(long, value_enum, default_value_t = VehicleKind::Copter)]
     vehicle_type: VehicleKind,
+    /// What the joystick's throttle means: `climb`, a climb rate with centered holding the
+    /// height (QGC's virtual joystick, whose throttle springs to center); `thrust`, collective
+    /// thrust (a stick that stays where it's left).
+    #[arg(long, value_enum, default_value_t = ThrottleMode::Climb)]
+    throttle: ThrottleMode,
     /// Serve no param metadata: QGC lists the params without descriptions, units, or ranges.
     #[arg(long, conflicts_with_all = ["http_url"])]
     no_metadata: bool,
@@ -134,6 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             earth,
             metadata,
             offboard_speed_mps: args.offboard_speed,
+            throttle: args.throttle,
             ..BridgeConfig::default()
         }),
     );

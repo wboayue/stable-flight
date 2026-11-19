@@ -4,8 +4,8 @@ use log::debug;
 use mavlink::common::*;
 use stable_flight_link::stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 use stable_flight_link::stable_flight::{
-    AbsoluteAttitudeCommand, AttitudeCommand, Command, ControlInput, Vec2, WaypointCommand,
-    euler_angles,
+    AbsoluteAttitudeCommand, AltitudeHoldCommand, AttitudeCommand, Command, ControlInput, Vec2,
+    WaypointCommand, euler_angles,
 };
 use stable_flight_link::{Control, Uplink};
 
@@ -46,10 +46,14 @@ const MIN_QUATERNION_NORM: f32 = 1e-6;
 /// translates: arming is [`CommandService`](crate::commands::CommandService)'s, and the flight
 /// controller decides when a stream has gone stale.
 ///
-/// - `MANUAL_CONTROL` (QGC's joystick or virtual joystick, 25 Hz) → an attitude command:
-///   roll = y, pitch = −x (stick forward, x > 0, is nose down), yaw = r, throttle = z, each
-///   divided by 1000. An axis marked invalid (`INT16_MAX`) is NaN, which the flight controller
-///   treats as neutral (its input policy). Buttons are ignored.
+/// - `MANUAL_CONTROL` (QGC's joystick or virtual joystick, 25 Hz) → sticks: roll = y, pitch =
+///   −x (stick forward, x > 0, is nose down), yaw = r, each divided by 1000. The throttle z
+///   (0 to 1000, QGC `JoystickThumbPad.qml`'s `calculateYAxis`) is read per [`ThrottleMode`]:
+///   as climb rate, an altitude hold with climb = (z − 500) / 500, so the virtual joystick's
+///   centered stick holds the height (`Copter::get_pilot_desired_climb_rate_ms` reads mid
+///   stick the same way); as thrust, an attitude command with throttle = z / 1000. An axis
+///   marked invalid (`INT16_MAX`) is NaN, which the flight controller treats as neutral (its
+///   input policy): a held height, or no thrust. Buttons are ignored.
 /// - `SET_POSITION_TARGET_LOCAL_NED` in `MAV_FRAME_LOCAL_NED` → a waypoint: north and east from
 ///   x and y, altitude from −z, and the horizontal velocity as its fly-through velocity when
 ///   the type mask includes it, and `yaw` (radians from north) as its heading when the mask
@@ -68,22 +72,48 @@ const MIN_QUATERNION_NORM: f32 = 1e-6;
 #[derive(Debug)]
 pub(crate) struct SetpointService {
     offboard_speed_mps: f32,
+    throttle: ThrottleMode,
+}
+
+/// What a ground station's `MANUAL_CONTROL` throttle (z) means; `--throttle`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum ThrottleMode {
+    /// A climb rate: centered holds the height (`ControlInput::AltitudeHold`). For a sprung
+    /// stick, as QGC's virtual joystick's is by default (`virtualJoystickAutoCenterThrottle`).
+    #[default]
+    Climb,
+    /// Collective thrust, bottom to top (`ControlInput::Attitude`). For a stick that stays
+    /// where it's left.
+    Thrust,
 }
 
 impl SetpointService {
-    /// Flies position targets at most `offboard_speed_mps`.
-    pub(crate) fn new(offboard_speed_mps: f32) -> Self {
-        Self { offboard_speed_mps }
+    /// Flies position targets at most `offboard_speed_mps`, and reads the joystick's throttle
+    /// as `throttle`.
+    pub(crate) fn new(offboard_speed_mps: f32, throttle: ThrottleMode) -> Self {
+        Self {
+            offboard_speed_mps,
+            throttle,
+        }
     }
 
     /// `MANUAL_CONTROL`: sticks for an attitude command.
     pub(crate) fn on_manual_control(&self, data: &MANUAL_CONTROL_DATA, out: &mut Outbox) {
-        let input = ControlInput::Attitude(AttitudeCommand {
-            throttle: axis(data.z),
-            roll: axis(data.y),
-            pitch: -axis(data.x),
-            yaw: axis(data.r),
-        });
+        let (roll, pitch, yaw) = (axis(data.y), -axis(data.x), axis(data.r));
+        let input = match self.throttle {
+            ThrottleMode::Climb => ControlInput::AltitudeHold(AltitudeHoldCommand {
+                climb: 2.0 * axis(data.z) - 1.0,
+                roll,
+                pitch,
+                yaw,
+            }),
+            ThrottleMode::Thrust => ControlInput::Attitude(AttitudeCommand {
+                throttle: axis(data.z),
+                roll,
+                pitch,
+                yaw,
+            }),
+        };
         send(input, out);
     }
 

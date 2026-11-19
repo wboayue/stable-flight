@@ -28,6 +28,7 @@ fn manual(x: i16, y: i16, z: i16, r: i16) -> MANUAL_CONTROL_DATA {
     }
 }
 
+/// In thrust mode, the throttle is collective thrust, bottom to top.
 #[test]
 fn maps_joystick_axes_to_attitude_sticks() {
     // (case, x, y, z, r, expected (throttle, roll, pitch, yaw))
@@ -60,7 +61,8 @@ fn maps_joystick_axes_to_attitude_sticks() {
     ];
     for (case, x, y, z, r, (throttle, roll, pitch, yaw)) in cases {
         let mut out = Outbox::default();
-        SetpointService::new(5.0).on_manual_control(&manual(x, y, z, r), &mut out);
+        SetpointService::new(5.0, ThrottleMode::Thrust)
+            .on_manual_control(&manual(x, y, z, r), &mut out);
         check!(
             sent(&out)
                 == [ControlInput::Attitude(AttitudeCommand {
@@ -74,15 +76,62 @@ fn maps_joystick_axes_to_attitude_sticks() {
     }
 }
 
+/// In climb mode (the default), the throttle is a climb rate: centered (z 500, the virtual
+/// joystick released) holds, full up climbs, bottom sinks.
+#[test]
+fn maps_the_throttle_to_a_climb_rate() {
+    // (case, x, y, z, r, expected (climb, roll, pitch, yaw))
+    let cases = [
+        ("centered holds", 0, 0, 500, 0, (0.0, 0.0, 0.0, 0.0)),
+        ("full up climbs", 0, 0, 1000, 0, (1.0, 0.0, 0.0, 0.0)),
+        ("bottom sinks", 0, 0, 0, 0, (-1.0, 0.0, 0.0, 0.0)),
+        ("a quarter up", 0, 0, 625, 0, (0.25, 0.0, 0.0, 0.0)),
+        (
+            "attitude sticks as in thrust mode",
+            1000,
+            250,
+            500,
+            -1000,
+            (0.0, 0.25, -1.0, -1.0),
+        ),
+    ];
+    for (case, x, y, z, r, (climb, roll, pitch, yaw)) in cases {
+        let mut out = Outbox::default();
+        let service = SetpointService::new(5.0, ThrottleMode::default());
+        service.on_manual_control(&manual(x, y, z, r), &mut out);
+        check!(
+            sent(&out)
+                == [ControlInput::AltitudeHold(AltitudeHoldCommand {
+                    climb,
+                    roll,
+                    pitch,
+                    yaw,
+                })],
+            "{case}"
+        );
+    }
+}
+
+/// An axis marked invalid is NaN, which the flight controller centers: in climb mode an invalid
+/// throttle holds the height.
 #[test]
 fn an_invalid_axis_is_nan() {
     let mut out = Outbox::default();
-    SetpointService::new(5.0).on_manual_control(&manual(0, i16::MAX, 500, 0), &mut out);
+    let thrust = SetpointService::new(5.0, ThrottleMode::Thrust);
+    thrust.on_manual_control(&manual(0, i16::MAX, 500, 0), &mut out);
     let [ControlInput::Attitude(sticks)] = sent(&out)[..] else {
         panic!("expected one attitude command");
     };
     check!(sticks.roll.is_nan());
     check!(sticks.throttle == 0.5);
+
+    let mut out = Outbox::default();
+    let climb = SetpointService::new(5.0, ThrottleMode::Climb);
+    climb.on_manual_control(&manual(0, 0, i16::MAX, 0), &mut out);
+    let [ControlInput::AltitudeHold(sticks)] = sent(&out)[..] else {
+        panic!("expected one altitude hold");
+    };
+    check!(sticks.climb.is_nan());
 }
 
 fn target(frame: MavFrame, ignore: PositionTargetTypemask) -> SET_POSITION_TARGET_LOCAL_NED_DATA {
@@ -149,7 +198,8 @@ fn flies_local_ned_position_targets_as_waypoints() {
     ];
     for (case, frame, ignore, expected) in cases {
         let mut out = Outbox::default();
-        SetpointService::new(3.0).on_position_target(&target(frame, ignore), &mut out);
+        SetpointService::new(3.0, ThrottleMode::default())
+            .on_position_target(&target(frame, ignore), &mut out);
         let inputs = sent(&out);
         match expected {
             None => {
@@ -186,7 +236,7 @@ fn attitude_target(q: [f32; 4], type_mask: AttitudeTargetTypemask) -> SET_ATTITU
 /// The absolute attitude sent for `data`, or `None` if it was dropped.
 fn absolute_attitude(data: &SET_ATTITUDE_TARGET_DATA) -> Option<AbsoluteAttitudeCommand> {
     let mut out = Outbox::default();
-    SetpointService::new(5.0).on_attitude_target(data, &mut out);
+    SetpointService::new(5.0, ThrottleMode::default()).on_attitude_target(data, &mut out);
     match sent(&out)[..] {
         [] => None,
         [ControlInput::AbsoluteAttitude(command)] => Some(command),

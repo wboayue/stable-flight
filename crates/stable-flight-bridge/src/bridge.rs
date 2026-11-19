@@ -18,7 +18,7 @@ use crate::interval::Interval;
 use crate::metadata::ComponentMetadata;
 use crate::outbox::Outbox;
 use crate::params::ParamService;
-use crate::setpoints::SetpointService;
+use crate::setpoints::{SetpointService, ThrottleMode};
 use crate::state::StateService;
 use crate::vehicle::VehicleKind;
 
@@ -57,6 +57,8 @@ pub(crate) struct BridgeConfig {
     pub(crate) arm_ack_timeout: Duration,
     /// Speed cap, in m/s, for position targets from offboard apps, which carry none.
     pub(crate) offboard_speed_mps: f32,
+    /// What the joystick's throttle means.
+    pub(crate) throttle: ThrottleMode,
 }
 
 impl Default for BridgeConfig {
@@ -79,6 +81,7 @@ impl Default for BridgeConfig {
             link_heartbeat_interval: Duration::from_millis(200),
             arm_ack_timeout: Duration::from_secs(1),
             offboard_speed_mps: 5.0,
+            throttle: ThrottleMode::default(),
         }
     }
 }
@@ -141,7 +144,7 @@ impl Bridge {
                 config.metadata,
             ),
             commands: CommandService::new(config.arm_ack_timeout, config.vehicle),
-            setpoints: SetpointService::new(config.offboard_speed_mps),
+            setpoints: SetpointService::new(config.offboard_speed_mps, config.throttle),
             state: StateService::new(
                 config.earth,
                 config.vehicle,
