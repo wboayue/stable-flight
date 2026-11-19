@@ -29,19 +29,41 @@ translates to MAVLink in `std` code.
 
 On the flight controller, reading the link is separate from commanding: `UplinkRouter` drains
 `LinkRx` between ticks and routes each uplink to a bounded queue (params to the `ParamServer`,
-`Control` to a link-fed commander), so params work whichever commander flies. `LinkPublisher` is
+`Control` to a link-fed commander, autotune requests to the host), so params work whichever
+commander flies. `LinkPublisher` is
 the `TelemetryPublisher` that owns `LinkTx`.
 
 On the companion, `stable-flight-bridge` presents the flight controller as MAVLink system 1,
 component 1, so MAVLink never runs on the board. It is a pure state machine (messages in,
 messages out, clock injected) behind a thin I/O loop, holding only what translation needs: the
 flight controller's last heartbeat (to send `HEARTBEAT` only while it is alive, and to confirm an
-arm, disarm, land, or transition before acking it), when the ground station was last heard (to
+arm, disarm, land, or transition before acking it, and the autotune report that answers a
+start or stop), when the ground station was last heard (to
 send `Control::Heartbeat` only while it is), and a param cache (to answer `PARAM_REQUEST_READ`
 without a round trip). Param listings and writes go to the flight controller, whose echo is
 forwarded unchanged, so the flight controller stays the only judge of a value. Staleness,
 failsafe, and arm decisions stay on the flight controller; the bridge translates and never
 decides. What it translates: the [bridge README](../../crates/stable-flight-bridge/README.md).
+
+### Autotune over the link
+
+A ground station starts and stops an autotune (`Uplink::Autotune`) and follows it
+(`Downlink::Autotune`); the run itself stays on the flight controller. Its host drives the
+supervisor between ticks: a start engages an `AutotuneHold` where the vehicle is, a stop or
+the pilot's sticks revert the run, and each step goes down as an `AutotuneReport`. So a link
+lost mid-run changes nothing the run needs: the failsafe holds, and a disarm reverts.
+
+* **The plan is the flight controller's.** A start carries no preset: the airframe picks
+  its plan, so a ground station can't run a large copter's plan on a small one.
+* **Reports are data; the bridge writes the words.** A report is the supervisor's event
+  without its measurements (a few dozen bytes), and the bridge formats it as `STATUSTEXT`,
+  keeping string formatting off the board. Status text formatted on the flight controller was
+  rejected for its flash.
+* **One-shot commands.** The bridge takes `MAV_CMD_DO_AUTOTUNE_ENABLE` with ArduPlane's
+  param1 (1 start, 0 stop) and acks it on the report that answers it. PX4's re-sent start
+  answered `IN_PROGRESS` was rejected: QGC's generic plugin keeps such a command pending and
+  fails the next send. Imitating ArduPilot's AUTOTUNE flight mode was rejected too: it needs
+  the heartbeat to claim to be ArduPilot. QGC sends the commands from a MAVLink Actions file.
 
 ## Link Failsafe
 

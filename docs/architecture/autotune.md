@@ -185,6 +185,15 @@ feedback and a search from the start gains were rejected (see the [design search
   tailsitter hovering nose up reads level and a roll stage waits on view roll (airplane yaw).
   The stabilizer reports its frame rather than the caller passing it to `Autotune`, so the
   two can't disagree: the frame comes from whichever stabilizer hosts the probes.
+* **Started from a ground station:** a run needs the vehicle still, which a ground station's
+  sticks don't give: QGC's virtual joystick flies attitude and throttle and holds no height.
+  `commanders::AutotuneHold` wraps the commander that flies and, while engaged, holds where the
+  run started, as ArduPilot's AUTOTUNE mode holds. A disarm, a land, or a roll or pitch stick
+  past 0.05 hands back (PX4's override, `McAutotuneAttitudeControl::updateStateMachine`), and
+  the host reverts the run (`Supervisor::revert`, the start's config, as a disarm before
+  completion does). Completion keeps the tuned gains, as both upstreams do by default (PX4's
+  `MC_AT_APPLY`, ArduPilot's save on disarm); a stop after it, in the air or landed, reverts
+  them. How the link carries it: [link.md](link.md#autotune-over-the-link).
 * **Robustness:** the claim is that the method, not one tune, transfers to hardware, so the sim
   checks it on a table of plants (airframes × delay, gyro noise, trim moments) from a low and a
   high start, each result held to the published step targets on its own plant

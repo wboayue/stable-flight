@@ -101,7 +101,7 @@ fly-tailsitter-companion *ARGS:
 fly-autotune *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- {{ARGS}}
 
-# Plays the companion for `just fly-companion`: heartbeats, arm, a scripted waypoint flight; Ctrl-C to go quiet
+# Plays the companion for `just fly-companion`: heartbeats, arm, a scripted waypoint flight (`--autotune`: an autotune after the hover, then land); Ctrl-C to go quiet
 link-pilot *ARGS:
     cargo run --bin link_pilot -- {{ARGS}}
 
