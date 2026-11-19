@@ -36,9 +36,7 @@ While the ground station is alive (any message within 3 s; QGC also heartbeats a
 
 ## Autotune from QGC
 
-QGC's autotune page is PX4's only (`PX4TuningComponent*.qml`'s `showAutoTuning`), so the start and stop come from QGC's MAVLink Actions (`MavlinkActionManager`), which work with any autopilot: copy [`qgc/AutotuneActions.json`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-bridge/qgc/AutotuneActions.json) into the `MavlinkActions` folder of QGC's save directory and pick it as the Fly View actions file in QGC's MAVLink Actions settings. "Autotune start" and "Autotune stop / revert" then show in the Fly view's additional actions.
-
-Hover where there's room (the probes tilt the copter and it drifts about a meter), then start. The flight controller holds the copter where it was for the run, whatever the virtual joystick's throttle; moving the roll or pitch stick takes over and reverts the run, as PX4 does. The messages show each stage; on "AutoTune: complete" the tuned gains fly, and the flight controller's log prints them for the airframe. To drop them, run "Autotune stop / revert", in the air or after landing. A disarm before completion reverts the run too.
+QGC's autotune page is PX4's only (`PX4TuningComponent*.qml`'s `showAutoTuning`), so the start and stop come from QGC's MAVLink Actions (`MavlinkActionManager`), which work with any autopilot: [`qgc/AutotuneActions.json`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-bridge/qgc/AutotuneActions.json) holds "Autotune start" and "Autotune stop / revert". Setting it up, flying the run, and reading its messages: the [autotune from QGC guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/copter-autotune-qgc.md).
 
 ## Param metadata
 
@@ -61,7 +59,7 @@ just bridge        # link on 127.0.0.1:14561, MAVLink to QGC on 127.0.0.1:14550
 
 Open QGroundControl; it listens on UDP 14550 and connects on the first heartbeat. Params appear on the vehicle setup Parameters page; the vehicle shows on the map at `--origin`.
 
-For an autotune from QGC, fly `just fly-companion` (the QuadCopterX from the link) with `just bridge` and the actions above; `just link-pilot --autotune` flies the same run without QGC, starting it after the hover and landing when it ends.
+For an autotune from QGC, follow the [guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/copter-autotune-qgc.md); `just link-pilot --autotune` flies the same run without QGC, starting it after the hover and landing when it ends.
 
 For a VTOL, name it: `just fly-tailsitter-companion` with `just bridge --vehicle-type tailsitter` flies the eXplora from QGC, transitions included (`--vehicle-type quadplane` for the Titan Cobra or the Alia 250).
 
