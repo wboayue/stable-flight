@@ -159,13 +159,14 @@ impl<C: Columns, W: Write> TelemetryPublisher for CsvRecorder<C, W> {
 /// thrust (after the stabilizer's thrust curve), the attitude setpoint (rad; NaN for other
 /// setpoints), the stick yaw (`yaw` of attitude sticks, `yaw_rate` of rate sticks; NaN for
 /// other inputs), and the horizontal position and ground velocity (`north_m`, `east_m`,
-/// `vel_north_mps`, `vel_east_mps`), and the wind estimate (`wind_*`; see
-/// [`TailsitterColumns`]).
+/// `vel_north_mps`, `vel_east_mps`), the wind estimate (`wind_*`; see [`TailsitterColumns`]),
+/// and the stick throttle (`stick_throttle`, as [`TailsitterColumns`]': in altitude hold, the
+/// climb stick).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CopterColumns;
 
 impl Columns for CopterColumns {
-    const HEADER: &'static str = "armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust,sp_roll,sp_pitch,sp_heading,stick_yaw,north_m,east_m,vel_north_mps,vel_east_mps,wind_north_mps,wind_east_mps,wind_sd_north_mps,wind_sd_east_mps";
+    const HEADER: &'static str = "armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust,sp_roll,sp_pitch,sp_heading,stick_yaw,north_m,east_m,vel_north_mps,vel_east_mps,wind_north_mps,wind_east_mps,wind_sd_north_mps,wind_sd_east_mps,stick_throttle";
 
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         let state = record.state;
@@ -186,7 +187,7 @@ impl Columns for CopterColumns {
         };
         write!(
             out,
-            "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
+            "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.4}",
             u8::from(record.command.arm),
             rates.x,
             rates.y,
@@ -211,7 +212,20 @@ impl Columns for CopterColumns {
             wind.1,
             wind.2,
             wind.3,
+            stick_throttle(&record.command.input),
         )
+    }
+}
+
+/// The commander's throttle: a stick's (or an absolute attitude's thrust), or in altitude hold
+/// the climb stick in `[-1, 1]`; NaN for other inputs.
+fn stick_throttle(input: &ControlInput) -> f32 {
+    match input {
+        ControlInput::Attitude(c) => c.throttle,
+        ControlInput::AltitudeHold(c) => c.climb,
+        ControlInput::Rate(c) => c.throttle,
+        ControlInput::AbsoluteAttitude(c) => c.thrust,
+        _ => f32::NAN,
     }
 }
 
@@ -257,13 +271,7 @@ impl Columns for TailsitterColumns {
         let (sp_kind, sp_roll, sp_pitch, sp_heading, sp_p, sp_q, sp_r) =
             setpoint_fields(record.setpoint);
         let mode = mode_code(record.flight_mode.mode);
-        let stick_throttle = match &record.command.input {
-            ControlInput::Attitude(c) => c.throttle,
-            ControlInput::AltitudeHold(c) => c.climb,
-            ControlInput::Rate(c) => c.throttle,
-            ControlInput::AbsoluteAttitude(c) => c.thrust,
-            _ => nan,
-        };
+        let stick_throttle = stick_throttle(&record.command.input);
         write!(
             out,
             "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",

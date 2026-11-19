@@ -125,14 +125,15 @@ fn quadplane_rows_match_the_header() {
 }
 
 #[test]
-fn copter_columns_carry_the_attitude_setpoint_and_stick_yaw() {
-    // (scenario, setpoint, input, expected (sp_roll, sp_pitch, sp_heading, stick_yaw))
+fn copter_columns_carry_the_attitude_setpoint_and_sticks() {
+    // (scenario, setpoint, input, expected (sp_roll, sp_pitch, sp_heading, stick_yaw,
+    // stick_throttle))
     let cases = [
         (
             "attitude sticks",
             attitude_setpoint(),
             attitude_sticks(-0.5),
-            ["0.2500", "-0.1250", "1.5000", "-0.5000"],
+            ["0.2500", "-0.1250", "1.5000", "-0.5000", "0.6000"],
         ),
         (
             "rate sticks",
@@ -141,19 +142,35 @@ fn copter_columns_carry_the_attitude_setpoint_and_stick_yaw() {
                 yaw_rate: 0.75,
                 ..Default::default()
             }),
-            ["NaN", "NaN", "NaN", "0.7500"],
+            ["NaN", "NaN", "NaN", "0.7500", "0.0000"],
+        ),
+        (
+            "altitude hold: the climb stick as the throttle",
+            attitude_setpoint(),
+            ControlInput::AltitudeHold(stable_flight::AltitudeHoldCommand {
+                climb: -0.25,
+                yaw: 0.5,
+                ..Default::default()
+            }),
+            ["0.2500", "-0.1250", "1.5000", "0.5000", "-0.2500"],
         ),
         (
             "a waypoint",
             attitude_setpoint(),
             ControlInput::Waypoint(WaypointCommand::default()),
-            ["0.2500", "-0.1250", "1.5000", "NaN"],
+            ["0.2500", "-0.1250", "1.5000", "NaN", "NaN"],
         ),
     ];
     for (scenario, setpoint, input, expected) in cases {
         let lines = recorded(CopterColumns, &[tick(setpoint, input)]);
         let (header, row) = (&lines[0], &lines[1]);
-        let names = ["sp_roll", "sp_pitch", "sp_heading", "stick_yaw"];
+        let names = [
+            "sp_roll",
+            "sp_pitch",
+            "sp_heading",
+            "stick_yaw",
+            "stick_throttle",
+        ];
         let got = names.map(|name| field(header, row, name));
         check!(got == expected, "{scenario}");
         check!(field(header, row, "armed") == "1", "{scenario}");
