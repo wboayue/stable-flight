@@ -8,6 +8,11 @@
 //! 2. after `--hover-s`, flies `--distance` north,
 //! 3. holds there until stopped.
 //!
+//! With `--autotune` it flies no leg north: after the hover it starts an autotune
+//! (`Uplink::Autotune`), prints each `AutotuneReport`, and lands where it is once the run ends
+//! (the flight controller disarms on touchdown). The vehicle keeps the tuned gains on
+//! completion; a stop from the bridge (`MAV_CMD_DO_AUTOTUNE_ENABLE` param1 0) reverts them.
+//!
 //! Stopping it (Ctrl-C) plays a companion that died: it just goes quiet, without disarming, so
 //! the flight controller's failsafe holds position. Started again, it takes the vehicle's
 //! position at that moment as home and flies the script from there.
@@ -18,13 +23,15 @@
 //! cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 //! cargo run --bin link_pilot
 //! cargo run --bin link_pilot -- --altitude 8 --distance 20
+//! cargo run --bin link_pilot -- --autotune
 //! ```
 
 use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use stable_flight::{Command, ControlInput, Vec2, Vec3, WaypointCommand};
+use stable_flight::{Command, ControlInput, LandCommand, Vec2, Vec3, WaypointCommand};
+use stable_flight_link::autotune::{AutotuneProgress, AutotuneRequest};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_link::{Control, Downlink, MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink};
 
@@ -51,6 +58,33 @@ struct Args {
     /// How long to hover before moving, in seconds.
     #[arg(long, default_value_t = 10.0)]
     hover_s: f32,
+    /// After the hover, autotune there instead of flying north, then land.
+    #[arg(long)]
+    autotune: bool,
+}
+
+/// Where an `--autotune` flight stands.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Tune {
+    /// Climbing and hovering; the start goes out after the hover.
+    Hovering,
+    /// The start went out; waiting for the run to end.
+    Running,
+    /// The run ended: landing.
+    Landing,
+}
+
+impl Tune {
+    /// The next stage after the vehicle reported `progress`.
+    fn after(self, progress: AutotuneProgress) -> Self {
+        match progress {
+            AutotuneProgress::Complete
+            | AutotuneProgress::StageFailed { .. }
+            | AutotuneProgress::Reverted
+            | AutotuneProgress::Refused(_) => Tune::Landing,
+            _ => self,
+        }
+    }
 }
 
 /// The scripted flight, relative to home (north, east, up).
@@ -85,6 +119,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         distance_m: args.distance,
         hover_s: args.hover_s,
     };
+    let script = if args.autotune {
+        Script {
+            distance_m: 0.0,
+            ..script
+        }
+    } else {
+        script
+    };
+    let mut tune = Tune::Hovering;
     let mut link = UdpLink::bind(&args.link_bind, &args.link_peer).map_err(|e| {
         format!(
             "failed to open link {} -> {}: {e}",
@@ -111,6 +154,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("vehicle: armed={armed} link_ok={link_ok}");
                     last_report = Some((armed, link_ok));
                 }
+                Downlink::Autotune(report) => {
+                    println!(
+                        "autotune {}/{}: {:?}",
+                        report.stage, report.stages, report.progress
+                    );
+                    let next = tune.after(report.progress);
+                    if next == Tune::Landing && tune != Tune::Landing {
+                        println!("autotune ended: landing");
+                    }
+                    tune = next;
+                }
                 _ => {}
             }
         }
@@ -128,11 +182,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // each round covers a flight controller started after the pilot.
         link.send_message(&Uplink::Control(Control::Heartbeat), &mut buf)?;
         if let Some((home_m, start)) = home {
-            let waypoint = script.waypoint(home_m, start.elapsed().as_secs_f32());
-            link.send_message(&Uplink::Control(Control::Arm(true)), &mut buf)?;
-            // `arm` is ignored on a command: arming is `Control::Arm`'s.
-            let command = Command::new(false, ControlInput::Waypoint(waypoint));
+            let elapsed_s = start.elapsed().as_secs_f32();
+            let waypoint = script.waypoint(home_m, elapsed_s);
+            // `arm` is ignored on a command: arming is `Control::Arm`'s. A landing stops arming,
+            // so the touchdown's disarm holds.
+            let input = if tune == Tune::Landing {
+                ControlInput::Land(LandCommand {
+                    position_m: waypoint.position_m,
+                })
+            } else {
+                link.send_message(&Uplink::Control(Control::Arm(true)), &mut buf)?;
+                ControlInput::Waypoint(waypoint)
+            };
+            let command = Command::new(false, input);
             link.send_message(&Uplink::Control(Control::Command(command)), &mut buf)?;
+            if args.autotune && tune == Tune::Hovering && elapsed_s >= script.hover_s {
+                println!("starting the autotune");
+                link.send_message(&Uplink::Autotune(AutotuneRequest::Start), &mut buf)?;
+                tune = Tune::Running;
+            }
         }
         thread::sleep(SEND_INTERVAL);
     }
@@ -143,6 +211,38 @@ mod tests {
     use assert2::check;
 
     use super::*;
+
+    /// An autotune flight lands once the run ends, however it ends, and not before.
+    #[test]
+    fn lands_once_the_autotune_ends() {
+        use stable_flight::stabilizers::copter::TunedLoop;
+        use stable_flight::tuning::autotune::{AutotuneAbort, StartError};
+
+        let rows = [
+            (AutotuneProgress::Started, Tune::Running),
+            (
+                AutotuneProgress::StageStarted(TunedLoop::RollRate),
+                Tune::Running,
+            ),
+            (AutotuneProgress::Complete, Tune::Landing),
+            (
+                AutotuneProgress::StageFailed {
+                    target: TunedLoop::Roll,
+                    reason: AutotuneAbort::Tilt,
+                },
+                Tune::Landing,
+            ),
+            (AutotuneProgress::Reverted, Tune::Landing),
+            (
+                AutotuneProgress::Refused(StartError::NotArmed),
+                Tune::Landing,
+            ),
+        ];
+        for (progress, expected) in rows {
+            check!(Tune::Running.after(progress) == expected, "{progress:?}");
+        }
+        check!(Tune::Landing.after(AutotuneProgress::Started) == Tune::Landing);
+    }
 
     #[test]
     fn hovers_above_home_then_flies_north_and_holds() {
