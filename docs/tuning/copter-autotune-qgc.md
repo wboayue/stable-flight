@@ -22,14 +22,15 @@ It covers the RealFlight QuadCopterX, flown from the link by `copter-companion-r
 
 1. Copy
    [`crates/stable-flight-bridge/qgc/AutotuneActions.json`](../../crates/stable-flight-bridge/qgc/AutotuneActions.json)
-   into QGC's `MavlinkActions` folder. On a desktop that is `Documents/QGroundControl/MavlinkActions`;
-   QGC shows the folder it reads under Application Settings → Fly View → MAVLink Actions.
+   into QGC's `MavlinkActions` folder. On a desktop that is
+   `Documents/QGroundControl/MavlinkActions`; QGC shows the folder it reads under Application
+   Settings → Fly View → MAVLink Actions.
 2. In that same box, set **Fly View Actions** to `AutotuneActions.json`.
 3. Under Application Settings → Fly View → Virtual Joystick, turn on **Virtual Joystick**.
 
 The Fly view now has an **Actions** button (the tool strip's hamburger) holding **Autotune
-start** and **Autotune stop / revert**. Each sends `MAV_CMD_DO_AUTOTUNE_ENABLE` once: param1 1
-starts, 0 stops. QGC's own autotune page is PX4's only, which is why the actions file is needed.
+start** and **Autotune stop / revert**. Each sends `MAV_CMD_DO_AUTOTUNE_ENABLE` once: the file sends
+param1 1 to start, 0 to stop. QGC's own autotune page is PX4's only, which is why the actions file is needed.
 
 ## Fly
 
@@ -44,13 +45,13 @@ just bridge          # link ⇄ MAVLink for QGC on UDP 14550
    which the QuadCopterX can't hover on (it needs about 0.82), so released the copter sinks
    ([#441](https://github.com/wboayue/stable-flight/issues/441)). Until that's fixed, turn
    off **Auto-Center Throttle** under Virtual Joystick, so the throttle stays where you leave
-   it, and set it a little above hover.
+   it, and set it about 80% up, then adjust until the copter holds its height.
 2. **Hover** a few meters up, sticks still.
 3. **Start:** Actions → **Autotune start**. The flight controller holds the copter where it is
    for the whole run, whatever the throttle stick says, and QGC shows **AutoTune: started, 9
    stages**.
 4. **Follow it** in QGC's messages (the bell, top right). QGC speaks the `NOTICE` lines.
-5. **Let it finish:** about 4 to 5 minutes on the sim (202–280 s for the design search,
+5. **Let it finish:** 3 to 5 minutes on the in-repo sim (202–280 s for the design search,
    [#296](https://github.com/wboayue/stable-flight/issues/296)). **AutoTune: complete: keep,
    or stop to revert** ends it; the tuned gains fly from then on, and the hold hands the copter
    back to the sticks.
@@ -71,6 +72,7 @@ Each line starts with `AutoTune:`, as ArduPilot's do. A run reads like this:
 | `complete: keep, or stop to revert` | Every stage committed; the tuned gains fly | NOTICE |
 | `roll failed: tilt` | A stage failed and the run ended (below) | ERROR, a pop-up |
 | `reverted to the start gains` | The gains from before the run are back | NOTICE |
+| `nothing to stop` | A stop found no run to undo | INFO |
 
 The stages run roll rate, pitch rate, roll, pitch (designed), then yaw rate, roll rate, pitch
 rate, roll, pitch (searched). The flight controller's terminal logs more: each probe, each
@@ -92,20 +94,20 @@ Nothing is saved on the flight controller.
 
 - **Autotune stop / revert** mid-run puts back the gains from before the run and hands the
   copter back to the sticks.
-- **Moving the roll or pitch stick** past 5% of its travel does the same: the pilot takes over,
+- **Moving the roll or pitch stick** past 5% of full deflection does the same: the pilot takes over,
   as in PX4. Mind the throttle stick: the copter flies on it again at once.
 - **Disarming** before completion reverts the run too.
-- **Losing the link** doesn't stop the run: the hold flies it where it was, and the
+- **Losing the link** doesn't stop the run: the hold keeps the copter where it was, and the
   flight controller's failsafe keeps holding if the link stays quiet.
 
-## When it doesn't go
+## Troubleshooting
 
 | QGC shows | Why | Do |
 |---|---|---|
 | `AutoTune: not started: disarmed` | The start came before the copter armed | Arm and take off first |
 | `AutoTune: already running` | A run is in progress | Wait for it, or stop it |
 | A stage failed: `tilt`, `rate`, or `sank` | The copter left the envelope: the gains under test flew too hard, or wind or a bump moved it | Check the wind, hover higher, start again; the stages already kept stay |
-| A stage failed: `not settled` | The copter wouldn't hold still long enough between probes | Calmer air; check the start gains hover steadily |
+| A stage failed: `not settled` | The copter wouldn't hold still long enough between probes | Calmer air; if the copter drifts or rocks in a plain hover, fix that first |
 | A stage failed: `host stalled` or `host fault` | The simulator froze or lost the vehicle for too long | Check RealFlight's frame rate and the link |
 | "command failed" from QGC | No report answered within 1 s: the flight controller isn't running `copter-companion-realflight`, or the link is down | Check the flight controller's terminal |
 | `Autotune start` unsupported | The bridge runs as a VTOL (`--vehicle-type`) | Only a copter autotunes from QGC for now |
