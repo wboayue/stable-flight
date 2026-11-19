@@ -57,7 +57,8 @@ impl AutotuneHoldConfig {
 /// holds the same way.
 ///
 /// `inner` keeps running every tick, so its own state (a failsafe's link timing) stays
-/// current, and its [`failsafe`](Commander::failsafe) state is reported as its own. Its command flies instead of the hold, and the hold lets go
+/// current, and its [`failsafe`](Commander::failsafe) state is reported as its own. Its
+/// command flies instead of the hold, and the hold lets go
 /// ([`take_override`](Self::take_override) reports it), when it:
 ///
 /// - disarms;

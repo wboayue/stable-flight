@@ -49,9 +49,10 @@ decides. What it translates: the [bridge README](../../crates/stable-flight-brid
 
 A ground station starts and stops an autotune (`Uplink::Autotune`) and follows it
 (`Downlink::Autotune`); the run itself stays on the flight controller. Its host drives the
-supervisor between ticks: a start engages an `AutotuneHold` where the vehicle is, a stop or
-the pilot's sticks revert the run, and each step goes down as an `AutotuneReport`. So a link
-lost mid-run changes nothing the run needs: the failsafe holds, and a disarm reverts.
+supervisor between ticks with `autotune::serve`: a start engages an `AutotuneHold` where the
+vehicle is, a stop or the pilot's sticks revert the run, and each step goes down as an
+`AutotuneReport`. So a link lost mid-run changes nothing the run needs: the failsafe holds,
+and a disarm reverts.
 
 * **The plan is the flight controller's.** A start carries no preset: the airframe picks
   its plan, so a ground station can't run a large copter's plan on a small one.
@@ -60,7 +61,7 @@ lost mid-run changes nothing the run needs: the failsafe holds, and a disarm rev
   keeping string formatting off the board. Status text formatted on the flight controller was
   rejected for its flash.
 * **One-shot commands.** The bridge takes `MAV_CMD_DO_AUTOTUNE_ENABLE` with ArduPlane's
-  param1 (1 start, 0 stop) and acks it on the report that answers it. PX4's re-sent start
+  param1 (non-zero starts, 0 stops) and acks it on the report that answers it. PX4's re-sent start
   answered `IN_PROGRESS` was rejected: QGC's generic plugin keeps such a command pending and
   fails the next send. Imitating ArduPilot's AUTOTUNE flight mode was rejected too: it needs
   the heartbeat to claim to be ArduPilot. QGC sends the commands from a MAVLink Actions file.

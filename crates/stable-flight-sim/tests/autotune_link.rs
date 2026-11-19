@@ -16,7 +16,7 @@ use stable_flight::commanders::{
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::{Autotune, Envelope, StagePlan};
 use stable_flight::{AttitudeCommand, Command, Configurable, ControlInput, Vec3, WaypointCommand};
-use stable_flight_link::autotune::{AutotuneProgress, AutotuneReport, AutotuneRequest};
+use stable_flight_link::autotune::{self, AutotuneProgress, AutotuneReport, AutotuneRequest};
 use stable_flight_link::commander::LinkCommander;
 use stable_flight_link::fc::{FcLink, FcLinkConfig, FcPoller};
 use stable_flight_link::loopback::{Loopback, LoopbackLink, LoopbackRx};
@@ -63,7 +63,6 @@ struct Flight {
     poller: FcPoller<'static, LoopbackRx<'static, DEPTH>>,
     flight_loop: Loop,
     autotune: Autotune,
-    stages: usize,
     ticks: usize,
     buf: [u8; MAX_FRAME_LEN],
     /// Every autotune report the companion received, in order.
@@ -97,7 +96,6 @@ impl Flight {
             poller,
             flight_loop,
             autotune: Autotune::new(&plan, Envelope::default()).expect("valid plan"),
-            stages: plan.len(),
             ticks: 0,
             buf: [0; MAX_FRAME_LEN],
             reports: Vec::new(),
@@ -131,7 +129,13 @@ impl Flight {
         self.poller
             .poll(&mut self.flight_loop)
             .expect("loopback receives");
-        self.serve_autotune();
+        let served = autotune::serve(
+            &mut self.poller,
+            &mut self.autotune,
+            &mut self.flight_loop,
+            TICK.as_secs_f32(),
+        );
+        assert!(served.dropped == 0);
         let mut recv = [0u8; MAX_FRAME_LEN];
         while let Some(message) = self
             .companion
@@ -142,54 +146,6 @@ impl Flight {
                 self.reports.push(report);
             }
         }
-    }
-
-    /// What a flight controller's host does between ticks: act on the link's requests, stop
-    /// the run when the pilot takes over, advance it, and report each step.
-    fn serve_autotune(&mut self) {
-        while let Some(request) = self.poller.autotune_request() {
-            let progress = match request {
-                AutotuneRequest::Start => match self.autotune.start(&self.flight_loop) {
-                    Ok(()) => {
-                        let state = self.flight_loop.state().clone();
-                        self.flight_loop.commander_mut().engage(&state);
-                        Some(AutotuneProgress::Started)
-                    }
-                    Err(refused) => Some(AutotuneProgress::Refused(refused)),
-                },
-                AutotuneRequest::Stop => {
-                    self.flight_loop.commander_mut().release();
-                    let reverted = self.autotune.revert(&mut self.flight_loop);
-                    Some(reverted.map_or(AutotuneProgress::Idle, |_| AutotuneProgress::Reverted))
-                }
-            };
-            self.report(progress);
-        }
-        if self.flight_loop.commander_mut().take_override() {
-            let reverted = self.autotune.revert(&mut self.flight_loop);
-            self.report(reverted.map(|_| AutotuneProgress::Reverted));
-        }
-        let Some(event) = self
-            .autotune
-            .update(&mut self.flight_loop, TICK.as_secs_f32())
-        else {
-            return;
-        };
-        if !self.autotune.is_running() {
-            self.flight_loop.commander_mut().release();
-        }
-        let status = self.autotune.status();
-        if let Some(report) = AutotuneReport::from_event(&event, status, self.stages) {
-            assert!(self.poller.report_autotune(report));
-        }
-    }
-
-    fn report(&mut self, progress: Option<AutotuneProgress>) {
-        let Some(progress) = progress else {
-            return;
-        };
-        let report = AutotuneReport::new(progress, self.autotune.status(), self.stages);
-        assert!(self.poller.report_autotune(report));
     }
 
     fn fly(&mut self, seconds: f32) {
@@ -268,6 +224,16 @@ fn a_link_started_autotune_completes_from_the_hold_and_reverts_on_stop() {
     let plan = StagePlan::copter_design_search();
     let expected: Vec<_> = (1..).zip(plan.iter().map(|stage| stage.target)).collect();
     check!(started == expected);
+    // Each stage's result carries the stage it ran in.
+    let done: Vec<_> = flight
+        .reports
+        .iter()
+        .filter_map(|r| match r.progress {
+            AutotuneProgress::StageDone { target, .. } => Some((r.stage, target)),
+            _ => None,
+        })
+        .collect();
+    check!(done == expected);
     check!(
         !progress
             .iter()

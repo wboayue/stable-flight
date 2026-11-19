@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Autotune from a ground station (#307): `MAV_CMD_DO_AUTOTUNE_ENABLE` param1 1 starts the
-  flight controller's autotune, 0 stops it and reverts its gains (mid-run, or after it ended),
-  on a copter (`--vehicle-type copter`). Acked once the flight controller's report answers it.
+- Autotune from a ground station (#307): `MAV_CMD_DO_AUTOTUNE_ENABLE` with a non-zero param1
+  starts the flight controller's autotune, 0 stops it and reverts its gains (mid-run, or after
+  it ended), on a copter (`--vehicle-type copter`). Acked once the flight controller's report answers it.
   Each step of the run reaches the ground station as "AutoTune: …" `STATUSTEXT` (a failed
   stage at `ERROR`, which QGC pops up). `qgc/AutotuneActions.json` puts both in QGC's Fly view
   as MAVLink Actions.

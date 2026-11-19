@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Autotune over the link (#307): `Uplink::Autotune(AutotuneRequest::{Start, Stop})` and
   `Downlink::Autotune(AutotuneReport)`, each step of a run without its measurements
   (`AutotuneReport::from_event`) and the answers to a request. `FcLink` routes the requests to
-  `FcPoller::autotune_request` and sends what the host gives `FcPoller::report_autotune`; the
-  host drives its `Autotune`. `UplinkRouter::with_autotune`,
+  `FcPoller::autotune_request` and sends what the host gives `FcPoller::report_autotune`;
+  `autotune::serve` drives the host's `Autotune` between ticks, from an `AutotuneHold`. `UplinkRouter::with_autotune`,
   `LinkPublisher::with_autotune_reports`.
 
 ### Changed

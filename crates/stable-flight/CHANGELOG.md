@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Supervisor::revert` (#307): puts back the config a run started from, mid-run or after it
   ended, as a disarm before completion does.
 - `FlightLoop::commander_mut` (#307), to change the commander between ticks.
+- `Supervisor::stages` (#307), the plan's stage count.
 - Under `serde`, `TunedLoop`, `Gains`, and the autotune results (`Outcome`, `KeepReason`,
   `AutotuneAbort`, `StartError`, `ProbeAbort`, `StepAbort`, `IdentifyAbort`, `DesignError`)
   serialize, for the link's autotune reports (#307).

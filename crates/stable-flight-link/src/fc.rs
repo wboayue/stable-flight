@@ -263,7 +263,9 @@ impl<R: LinkRx> FcPoller<'_, R> {
     }
 
     /// The oldest autotune request [`poll`](Self::poll) received, for the host to act on
-    /// (see [`crate::autotune`]).
+    /// (see [`crate::autotune`], whose [`serve`](crate::autotune::serve) takes them). A host
+    /// that never takes them drops new ones once the queue fills, and the ground station's
+    /// request goes unanswered.
     ///
     /// # Examples
     ///

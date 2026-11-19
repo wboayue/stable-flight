@@ -4,6 +4,7 @@ use super::*;
 use stable_flight_link::stable_flight::{Command, FlightMode, ModeRefusal};
 
 use crate::test_support::GCS;
+use crate::vehicle::VehicleKind;
 
 const TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -100,7 +101,7 @@ fn answers_each_request_by_the_flight_controllers_state() {
         ),
     ];
     for (case, param1, param2, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, false, true);
+        let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
         let mut out = Outbox::default();
         let handled = service.on_command_long(
             &GCS,
@@ -150,7 +151,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
     for (case, heartbeats, poll_ms, expected) in cases {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
-        let mut service = CommandService::new(TIMEOUT, false, true);
+        let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
         service.on_command_long(
             &GCS,
             &arm_disarm(1.0, 0.0),
@@ -179,7 +180,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
 #[test]
 fn rejects_a_second_request_while_one_is_pending() {
     let t0 = Instant::now();
-    let mut service = CommandService::new(TIMEOUT, false, true);
+    let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &arm_disarm(1.0, 0.0), fc(false), t0, &mut out);
     service.on_command_long(&GCS, &arm_disarm(0.0, 0.0), fc(false), t0, &mut out);
@@ -193,7 +194,7 @@ fn rejects_a_second_request_while_one_is_pending() {
 
 #[test]
 fn leaves_other_commands_to_the_caller() {
-    let mut service = CommandService::new(TIMEOUT, false, true);
+    let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
     let mut out = Outbox::default();
     let data = COMMAND_LONG_DATA {
         command: MavCmd::MAV_CMD_NAV_TAKEOFF,
@@ -257,7 +258,7 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
         ),
     ];
     for (case, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, false, true);
+        let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
         let mut out = Outbox::default();
         check!(
             service.on_command_long(&GCS, &nav_land(), fc, Instant::now(), &mut out),
@@ -275,7 +276,7 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
 fn acks_a_land_once_the_heartbeat_shows_the_land_mode() {
     let t0 = Instant::now();
     let ms = Duration::from_millis;
-    let mut service = CommandService::new(TIMEOUT, false, true);
+    let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &nav_land(), fc(true), t0, &mut out);
     check!(out.to_gcs.is_empty(), "pending");
@@ -293,7 +294,7 @@ fn acks_a_land_once_the_heartbeat_shows_the_land_mode() {
     check!(acks_of(MavCmd::MAV_CMD_NAV_LAND, &out) == [MavResult::MAV_RESULT_ACCEPTED]);
 
     // A land that never shows fails at the timeout.
-    let mut service = CommandService::new(TIMEOUT, false, true);
+    let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &nav_land(), fc(true), t0, &mut out);
     service.on_fc_heartbeat(true, ControlMode::Attitude, COPTER, &mut out);
@@ -410,7 +411,12 @@ fn sends_a_transition_by_the_vehicle_and_its_regime() {
         ),
     ];
     for (case, is_vtol, state, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, is_vtol, true);
+        let vehicle = if is_vtol {
+            VehicleKind::Tailsitter
+        } else {
+            VehicleKind::Copter
+        };
+        let mut service = CommandService::new(TIMEOUT, vehicle);
         let mut out = Outbox::default();
         check!(
             service.on_command_long(&GCS, &transition(state), fc, Instant::now(), &mut out),
@@ -470,7 +476,7 @@ fn acks_a_transition_once_shown_and_withdraws_one_refused_or_unconfirmed() {
     for (case, heartbeats, poll_ms, expected, withdrawn) in cases {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
-        let mut service = CommandService::new(TIMEOUT, true, true);
+        let mut service = CommandService::new(TIMEOUT, VehicleKind::Tailsitter);
         let mut sent = Outbox::default();
         let fw = transition(MavVtolState::MAV_VTOL_STATE_FW);
         service.on_command_long(&GCS, &fw, vtol(true, Copter), t0, &mut sent);
@@ -541,12 +547,12 @@ fn answers_each_autotune_request_by_the_vehicle() {
             Some(MAV_RESULT_DENIED),
         ),
         (
-            "other param1",
+            "non-zero param1 starts, as ArduPlane takes it",
             2.0,
             true,
             fc(true),
+            Some(AutotuneRequest::Start),
             None,
-            Some(MAV_RESULT_DENIED),
         ),
         (
             "NaN param1",
@@ -574,7 +580,14 @@ fn answers_each_autotune_request_by_the_vehicle() {
         ),
     ];
     for (case, param1, copter, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT, !copter, copter);
+        let mut service = CommandService::new(
+            TIMEOUT,
+            if copter {
+                VehicleKind::Copter
+            } else {
+                VehicleKind::Quadplane
+            },
+        );
         let mut out = Outbox::default();
         let handled =
             service.on_command_long(&GCS, &autotune_enable(param1), fc, Instant::now(), &mut out);
@@ -639,7 +652,7 @@ fn acks_an_autotune_request_on_its_report() {
     ];
     for (case, param1, reports, expected) in cases {
         let t0 = Instant::now();
-        let mut service = CommandService::new(TIMEOUT, false, true);
+        let mut service = CommandService::new(TIMEOUT, VehicleKind::Copter);
         let mut out = Outbox::default();
         service.on_command_long(&GCS, &autotune_enable(param1), fc(true), t0, &mut out);
         out.to_fc.clear();

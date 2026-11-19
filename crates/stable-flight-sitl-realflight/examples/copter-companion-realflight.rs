@@ -37,7 +37,7 @@ use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::tuning::autotune::{Autotune, Envelope, StagePlan};
 use stable_flight::{Commander, Configurable, FailsafeState, FlightLoop};
-use stable_flight_link::autotune::{AutotuneProgress, AutotuneReport, AutotuneRequest};
+use stable_flight_link::autotune::{self, AutotuneProgress};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::autotune::log_event;
@@ -126,7 +126,7 @@ fn main() {
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
 
     let plan = StagePlan::copter_design_search();
-    let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid autotune plan");
+    let mut tune = Autotune::new(&plan, Envelope::default()).expect("valid autotune plan");
 
     let mut failsafe = None;
     let mut last_tick = Duration::ZERO;
@@ -143,60 +143,23 @@ fn main() {
         // The autotune: the host's timing in, the link's requests, the pilot's override, then
         // a step of the run, each reported down the link.
         if stats.elapsed.saturating_sub(last_tick) > FREEZE_GAP {
-            autotune.note_stall();
+            tune.note_stall();
         }
         last_tick = stats.elapsed;
-        autotune.set_host_slow(stats.host_slow);
-        autotune.set_state_stale(flight_loop.vehicle().state_is_stale());
-        let mut reports = Vec::new();
-        while let Some(request) = poller.autotune_request() {
-            let progress = match request {
-                AutotuneRequest::Start => match autotune.start(flight_loop) {
-                    Ok(()) => {
-                        info!("autotune: started from the link");
-                        let state = flight_loop.state().clone();
-                        flight_loop.commander_mut().engage(&state);
-                        AutotuneProgress::Started
-                    }
-                    Err(e) => {
-                        warn!("autotune: can't start: {e}");
-                        AutotuneProgress::Refused(e)
-                    }
-                },
-                AutotuneRequest::Stop => {
-                    flight_loop.commander_mut().release();
-                    match autotune.revert(flight_loop) {
-                        Some(_) => {
-                            info!("autotune: stopped from the link; start gains back");
-                            AutotuneProgress::Reverted
-                        }
-                        None => AutotuneProgress::Idle,
-                    }
-                }
-            };
-            reports.push(AutotuneReport::new(progress, autotune.status(), plan.len()));
+        tune.set_host_slow(stats.host_slow);
+        tune.set_state_stale(flight_loop.vehicle().state_is_stale());
+        let served = autotune::serve(&mut poller, &mut tune, flight_loop, LOOP_DT_S);
+        match served.answer {
+            Some(AutotuneProgress::Started) => info!("autotune: started from the link"),
+            Some(AutotuneProgress::Refused(e)) => warn!("autotune: can't start: {e}"),
+            Some(AutotuneProgress::Reverted) => info!("autotune: stopped; start gains back"),
+            _ => {}
         }
-        if flight_loop.commander_mut().take_override() && autotune.revert(flight_loop).is_some() {
-            info!("autotune: the sticks took over; start gains back");
-            let status = autotune.status();
-            reports.push(AutotuneReport::new(
-                AutotuneProgress::Reverted,
-                status,
-                plan.len(),
-            ));
-        }
-        if let Some(event) = autotune.update(flight_loop, LOOP_DT_S) {
+        if let Some(event) = served.event {
             log_event(&event, flight_loop.stabilizer().config(), SOURCE);
-            if !autotune.is_running() {
-                flight_loop.commander_mut().release();
-            }
-            let status = autotune.status();
-            reports.extend(AutotuneReport::from_event(&event, status, plan.len()));
         }
-        for report in reports {
-            if !poller.report_autotune(report) {
-                warn!("autotune: report queue full, dropped {report:?}");
-            }
+        if served.dropped > 0 {
+            warn!("autotune: report queue full, dropped {}", served.dropped);
         }
 
         // Log each handover (lifecycle events), not every tick.
