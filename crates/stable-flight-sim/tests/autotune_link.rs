@@ -46,7 +46,7 @@ const STICK_THROTTLE: f32 = 0.3;
 /// How far the hold may let the height move from where the run started, in m. The design
 /// search moved it 0.027 m from the hold and 0.066 m from a waypoint hover (`common::hover`);
 /// 0.1 m leaves a margin over both, where the sticks' throttle alone sinks the vehicle past the
-/// envelope's 2 m (`Envelope::max_altitude_loss_m`) and fails the stage.
+/// envelope's 3 m (`Envelope::max_altitude_loss_m`) and fails the stage.
 const MAX_HEIGHT_CHANGE_M: f32 = 0.1;
 
 /// How far the hold may let the vehicle drift sideways, in m: the probes' tilt steps push it
