@@ -46,7 +46,7 @@ The repository is a Cargo workspace:
 | [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, guidance and cascaded-PID stabilizers for copters, planes, tailsitters, and quadplanes, mixers, and `FlightLoop` (one control tick). `no_std`, with no simulator or I/O dependencies |
 | [`stable-flight-link`](crates/stable-flight-link) | Wire protocol between the flight controller and a companion computer: `Uplink`/`Downlink` messages, versioned COBS frames, and the byte-level `Link` trait. `no_std` |
 | [`stable-flight-mavlink`](crates/stable-flight-mavlink) | MAVLink message builders for the bridge: pure functions from core values to MAVLink payloads |
-| [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params, state, arming, joystick and offboard setpoints, land, VTOL state and transitions |
+| [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params, state, arming, joystick and offboard setpoints, land, copter autotune, VTOL state and transitions |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, the real-time `RealTimeRunner` + `ShutdownSignal`, and the per-tick `CsvRecorder` |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
 | [`stable-flight-sitl-xplane`](crates/stable-flight-sitl-xplane) | X-Plane backend: `XPlaneVehicle` over UDP datarefs, frame conversion, local-origin tracking, raw state captures, the tuned Alia 250, and the X-Plane examples |
@@ -65,7 +65,7 @@ Each simulator backend is its own crate, so a backend's dependencies never reach
 
 | Simulator | Crate | Status |
 |---|---|---|
-| [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX: manual (joystick or transmitter), scripted, and from the link (QGC via the bridge). Flies the eXplora VTOL tailsitter in hover and plane flight with transitions both ways: manual, scripted, and from the link (QGC's transition button via the bridge). Flies the Titan Cobra VTOL quadplane in hover and plane flight with transitions both ways: scripted |
+| [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX: manual (joystick or transmitter), scripted, and from the link (QGC via the bridge, autotune included). Flies the eXplora VTOL tailsitter in hover and plane flight with transitions both ways: manual, scripted, and from the link (QGC's transition button via the bridge). Flies the Titan Cobra VTOL quadplane in hover and plane flight with transitions both ways: scripted |
 | [X-Plane 12](https://www.x-plane.com) | [`stable-flight-sitl-xplane`](crates/stable-flight-sitl-xplane) | Flies the Alia 250 on its lift rotors, manual (joystick) and from the link (QGC via the bridge, map matching X-Plane), and through transitions and plane legs from a waypoint script |
 
 For `cargo test` and CI, [`stable-flight-sim`](crates/stable-flight-sim) flies the pipeline closed loop on deterministic in-repo multirotor, airplane, tailsitter, and quadplane models: no realism, no setup, the same flight every run.
@@ -97,7 +97,7 @@ Runnable entrypoints are the crate examples (`crates/*/examples/`); run them fro
 |---|---|---|
 | Quadcopter, from a companion | QGC through the bridge, or `link_pilot` | `just fly-companion` + `just bridge` (or `just link-pilot`) |
 | Quadcopter, scripted | Waypoint CSV | `just fly-auto` |
-| Quadcopter autotune | None: tunes, prints gains, lands | `just fly-autotune` |
+| Quadcopter autotune | None: tunes, prints gains, lands; or QGC: [guide](docs/tuning/copter-autotune-qgc.md) | `just fly-autotune`; `just fly-companion` + `just bridge` |
 | Quadcopter, manual | Joystick or Spektrum transmitter | `just fly-manual` |
 | Tailsitter, from a companion | QGC through the bridge (transition button) | `just fly-tailsitter-companion` + `just bridge --vehicle-type tailsitter` |
 | Tailsitter, scripted | Waypoint CSV: hover, or a transition mission | `just fly-tailsitter-auto` |
