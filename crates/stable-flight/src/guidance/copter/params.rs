@@ -60,6 +60,9 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_HOLD_SINK", altitude_hold.max_sink_mps),
         param!("GUID_HOLD_ACC", altitude_hold.accel_mps2),
         param!("GUID_HOLD_LOCK", altitude_hold.lock_speed_mps),
+        param!("GUID_HOLD_STOP", altitude_hold.touchdown.stopped_mps),
+        param!("GUID_HOLD_DOWN_S", altitude_hold.touchdown.hold_s),
+        param!("GUID_HOLD_GND", altitude_hold.grounded_target_share),
     ];
 }
 
@@ -376,6 +379,28 @@ mod metadata {
                 )
                 .with_units("m/s")
                 .above(0.0),
+            LANDING
+                .param(
+                    "GUID_HOLD_STOP",
+                    "Vertical speed under which altitude hold reads the vehicle as still",
+                )
+                .with_units("m/s")
+                .above(0.0)
+                .below(DESCENDING_MPS),
+            LANDING
+                .param(
+                    "GUID_HOLD_DOWN_S",
+                    "How long altitude hold must read still against a stick down to idle",
+                )
+                .with_units("s")
+                .above(0.0),
+            LANDING
+                .param(
+                    "GUID_HOLD_GND",
+                    "Share of GUID_ALT_LEASH the target must run below to read as grounded",
+                )
+                .above(0.0)
+                .at_most(1.0),
         ];
     }
 }

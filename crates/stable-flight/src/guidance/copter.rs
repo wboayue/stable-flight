@@ -55,8 +55,9 @@ use crate::math::{
 };
 use altitude_hold::HoldState;
 pub use altitude_hold::{
-    AltitudeHoldConfig, DEFAULT_CLIMB_ACCEL_MPS2, DEFAULT_CLIMB_DEADZONE, DEFAULT_LOCK_SPEED_MPS,
-    DEFAULT_MAX_CLIMB_MPS, DEFAULT_MAX_SINK_MPS,
+    AltitudeHoldConfig, DEFAULT_CLIMB_ACCEL_MPS2, DEFAULT_CLIMB_DEADZONE,
+    DEFAULT_GROUNDED_TARGET_SHARE, DEFAULT_LOCK_SPEED_MPS, DEFAULT_MAX_CLIMB_MPS,
+    DEFAULT_MAX_SINK_MPS,
 };
 use hover_wind::HoverWind;
 use leg_heading::LegHeading;
@@ -554,11 +555,15 @@ pub struct CopterGuidance {
     lateral: LateralController,
     /// Where the altitude loop is steered, in meters: the waypoint's altitude, or on the way
     /// down to it, slewed at the descent limit and leashed `altitude_leash_m` below the
-    /// vehicle. `None` until waypoint or land flight latches it from the vehicle's altitude.
+    /// vehicle; in altitude-hold flight, moved at the climb stick's rate and leashed above or
+    /// below it. `None` until waypoint, land, or altitude-hold flight latches it from the
+    /// vehicle's altitude; carried over among the three.
     altitude_target_m: Option<f32>,
     /// How fast the altitude target last descended, in m/s, negative while it climbs (0 when
-    /// level). Latched from the vehicle's climb, then raised toward the descent rate: at
-    /// `climb_decel_mps2` while negative, at `descent_accel_mps2` from 0.
+    /// level). Latched from the vehicle's climb. Waypoint and land flight raise it toward the
+    /// descent rate: at `climb_decel_mps2` while negative, at `descent_accel_mps2` from 0.
+    /// Altitude-hold flight slews it toward the climb stick's rate, sign flipped, at
+    /// [`AltitudeHoldConfig::accel_mps2`] either way.
     descent_speed_mps: f32,
 
     /// Heading-hold target for attitude, absolute-attitude, waypoint, and land commands.
@@ -581,11 +586,8 @@ pub struct CopterGuidance {
 
     /// Estimates the wind while airborne and not paused.
     wind: HoverWind,
-    /// Altitude-hold flight's ground and height lock.
+    /// Altitude-hold flight's ground and height lock, and whether the last setpoint idled.
     hold: HoldState,
-    /// The last setpoint idled, or guidance was just primed: altitude-hold flight entered
-    /// low starts on the ground.
-    last_idle: bool,
 }
 
 impl CopterGuidance {
@@ -615,7 +617,6 @@ impl CopterGuidance {
             saturation: Saturation::default(),
             wind: HoverWind::default(),
             hold: HoldState::default(),
-            last_idle: true,
         }
     }
 
@@ -722,7 +723,7 @@ impl Guidance for CopterGuidance {
                 Setpoint::BodyRate(self.absolute_rate_setpoint(command, estimated_state))
             }
         };
-        self.last_idle = setpoint.idle();
+        self.hold.note_idle(setpoint.idle());
         setpoint
     }
 
@@ -747,8 +748,7 @@ impl Guidance for CopterGuidance {
         self.tilt_capped = false;
         self.requested_accel_mps2 = Vec2::zeros();
         self.saturation = Saturation::default();
-        self.hold.reset();
-        self.last_idle = true;
+        self.hold = HoldState::default();
     }
 
     /// `tilt` when the waypoint tilt request was capped at

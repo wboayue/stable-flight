@@ -3,8 +3,10 @@
 //! flies the target; let go, the vehicle brakes and holds the height it stops at. Its
 //! settings: [`AltitudeHoldConfig`].
 
-use crate::commanders::{DEFAULT_STOPPED_MPS, DEFAULT_TOUCHDOWN_HOLD_S};
-use crate::controllers::{AltitudeTarget, InvalidConfig, check, check_positive};
+use crate::commanders::TouchdownConfig;
+use crate::controllers::{
+    AltitudeController, AltitudeTarget, InvalidConfig, check, check_positive, check_unit_interval,
+};
 use crate::math::saturate_unit;
 use crate::{AltitudeHoldCommand, AttitudeSetpoint, VehicleState};
 
@@ -33,6 +35,11 @@ pub const DEFAULT_CLIMB_ACCEL_MPS2: f32 = 2.5;
 /// Default [`AltitudeHoldConfig::lock_speed_mps`]: PX4's `MPC_HOLD_MAX_Z`, 0.6 m/s
 /// (`FlightTaskManualAltitude::_updateAltitudeLock`).
 pub const DEFAULT_LOCK_SPEED_MPS: f32 = 0.6;
+
+/// Default [`AltitudeHoldConfig::grounded_target_share`]. At a quarter, a full-down push on a
+/// vehicle resting on the ground idles it in 1.45 s on the sim, against 1.63 s at a half; the
+/// RealFlight QuadCopterX's pilot let go after about 1.4 s (#441).
+pub const DEFAULT_GROUNDED_TARGET_SHARE: f32 = 0.25;
 
 /// How the climb stick of altitude-hold flight maps to a climb rate, as ArduPilot's AltHold
 /// maps its throttle: linear past a deadzone around center, to the top rate at either end
@@ -75,11 +82,23 @@ pub struct AltitudeHoldConfig {
     /// back to its target (#441). Higher: locks sooner, stopping further past where the stick
     /// was let go. Must be positive and finite. Defaults to [`DEFAULT_LOCK_SPEED_MPS`].
     pub lock_speed_mps: f32,
+    /// How long a vehicle must hold still against a stick down to read as on the ground, and
+    /// the vertical speed that counts as still: the touchdown detector's settings. Defaults to
+    /// [`TouchdownConfig::default`].
+    pub touchdown: TouchdownConfig,
+    /// How far below the vehicle its target must be, as a share of
+    /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m), for a vehicle held
+    /// still against a stick down to read as on the ground: a target that far below and a
+    /// vehicle not following it means something holds it up. In the air the vehicle keeps up
+    /// with a sinking target to within its tracking error, centimeters on the sim. Higher: a
+    /// slow push on the ground idles later; lower: a lagging sink reads as grounded sooner. In
+    /// `(0, 1]`. Defaults to [`DEFAULT_GROUNDED_TARGET_SHARE`].
+    pub grounded_target_share: f32,
 }
 
 impl Default for AltitudeHoldConfig {
-    /// ArduPilot's AltHold deadzone, climb, and acceleration (0.2, 2.5 m/s, 2.5 m/s²), and PX4's
-    /// 1.5 m/s sink and 0.6 m/s lock.
+    /// ArduPilot's AltHold deadzone, climb, and acceleration (0.2, 2.5 m/s, 2.5 m/s²), PX4's
+    /// 1.5 m/s sink and 0.6 m/s lock, and the touchdown detector's defaults.
     fn default() -> Self {
         Self {
             deadzone: DEFAULT_CLIMB_DEADZONE,
@@ -87,13 +106,16 @@ impl Default for AltitudeHoldConfig {
             max_sink_mps: DEFAULT_MAX_SINK_MPS,
             accel_mps2: DEFAULT_CLIMB_ACCEL_MPS2,
             lock_speed_mps: DEFAULT_LOCK_SPEED_MPS,
+            touchdown: TouchdownConfig::default(),
+            grounded_target_share: DEFAULT_GROUNDED_TARGET_SHARE,
         }
     }
 }
 
 impl AltitudeHoldConfig {
-    /// Checks that `deadzone` is in `[0, 1)` and the rates, acceleration, and lock speed are
-    /// positive and finite.
+    /// Checks that `deadzone` is in `[0, 1)`, the rates, acceleration, and lock speed are
+    /// positive and finite, `touchdown` is valid ([`TouchdownConfig::validate`]), and
+    /// `grounded_target_share` is in `(0, 1]`.
     ///
     /// # Errors
     ///
@@ -103,7 +125,9 @@ impl AltitudeHoldConfig {
         check_positive("max_climb_mps", self.max_climb_mps)?;
         check_positive("max_sink_mps", self.max_sink_mps)?;
         check_positive("accel_mps2", self.accel_mps2)?;
-        check_positive("lock_speed_mps", self.lock_speed_mps)
+        check_positive("lock_speed_mps", self.lock_speed_mps)?;
+        self.touchdown.validate()?;
+        check_unit_interval("grounded_target_share", self.grounded_target_share)
     }
 
     /// The climb rate the climb `stick` asks for, in m/s, up positive: 0 inside the deadzone,
@@ -123,8 +147,11 @@ impl AltitudeHoldConfig {
 /// Altitude-hold flight's own state: whether the vehicle is on the ground, where a stick at or
 /// below the deadzone idles the motors (ArduPilot's `Mode::get_alt_hold_state_D_ms`), and
 /// whether a centered stick has locked the height.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct HoldState {
+    /// The last setpoint of any flight idled, or guidance was just primed: altitude-hold flight
+    /// entered low starts on the ground. Kept across [`reset`](Self::reset).
+    last_idle: bool,
     /// `None` until altitude-hold flight starts, which reads it from the height above the
     /// ground the guidance was primed on.
     landed: Option<bool>,
@@ -135,24 +162,33 @@ pub(super) struct HoldState {
     locked: bool,
 }
 
-impl HoldState {
-    /// Forgets it, for when altitude-hold flight ends.
-    pub(super) fn reset(&mut self) {
-        self.landed = None;
-        self.grounded_s = 0.0;
-        self.locked = false;
+impl Default for HoldState {
+    /// Primed: on the ground.
+    fn default() -> Self {
+        Self {
+            last_idle: true,
+            landed: None,
+            grounded_s: 0.0,
+            locked: false,
+        }
     }
 }
 
-/// How far below the vehicle, as a share of
-/// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m), its target must be
-/// for a vehicle held still against a stick down to read as on the ground: a target that far
-/// below and a vehicle not following it means the ground is in the way. In the air the vehicle
-/// keeps up with a sinking target to within its tracking error, centimeters on the sim. At a
-/// quarter, a full-down push on a vehicle resting on the ground idles it in 1.45 s on the sim,
-/// against 1.63 s at a half; the RealFlight QuadCopterX's pilot let go after about 1.4 s
-/// (#441).
-const GROUNDED_TARGET_LEASHES: f32 = 0.25;
+impl HoldState {
+    /// Forgets altitude-hold flight's own state, for when it ends; the last setpoint's idle
+    /// stays.
+    pub(super) fn reset(&mut self) {
+        *self = Self {
+            last_idle: self.last_idle,
+            ..Self::default()
+        };
+    }
+
+    /// Notes whether this tick's setpoint, of any flight, idled.
+    pub(super) fn note_idle(&mut self, idle: bool) {
+        self.last_idle = idle;
+    }
+}
 
 impl CopterGuidance {
     /// Altitude-hold flight: the roll, pitch, and yaw sticks as attitude flight's, and the
@@ -164,11 +200,10 @@ impl CopterGuidance {
     /// vehicle takes off. On the ground means: entering altitude-hold flight idle (or just
     /// armed) no higher than
     /// [`airborne_height_m`](super::CopterGuidanceConfig::airborne_height_m) above where
-    /// guidance was primed, or the vehicle held still for [`DEFAULT_TOUCHDOWN_HOLD_S`] against a
-    /// stick down, its target at least a quarter of the
-    /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m) below it
-    /// ([`update_ground`](Self::update_ground)). ArduPilot's AltHold idles the same way
-    /// (`_TakeOff::triggered_ms`, and its land detector on the throttle held low).
+    /// guidance was primed, or the vehicle held still against a stick down, its target well
+    /// below it ([`update_ground`](Self::update_ground)). ArduPilot's AltHold
+    /// idles the same way (`_TakeOff::triggered_ms`, and its land detector on the throttle
+    /// held low).
     pub(super) fn altitude_hold(
         &mut self,
         dt: f32,
@@ -205,25 +240,35 @@ impl CopterGuidance {
         }
     }
 
-    /// Whether the vehicle sits on the ground this tick, idling: landed (on entry, from its
-    /// height; in flight, once the ground holds it up against a stick down) and the stick at
-    /// or below the deadzone. A climb takes off, the altitude target then latching from the
-    /// vehicle.
+    /// Updates whether the vehicle is on the ground and returns whether it sits there this
+    /// tick, idling: landed (on entry, from its height; in flight, once the ground holds it up
+    /// against a stick down) and the stick at or below the deadzone. A climb takes off, the
+    /// altitude target then latching from the vehicle. Landing in flight clears the altitude
+    /// target, its rate, and the altitude loop.
     ///
-    /// The ground holds it up when it stays slower than [`DEFAULT_STOPPED_MPS`] for
-    /// [`DEFAULT_TOUCHDOWN_HOLD_S`] while its target is at least [`GROUNDED_TARGET_LEASHES`] of
-    /// the leash below it. It needs no descent first, so a stick pushed down on a vehicle
-    /// already resting on the ground idles it: released less than a second after a touchdown,
-    /// the RealFlight QuadCopterX locked its height there and sat at hover thrust, and a later
-    /// push couldn't idle it (#441). The target condition keeps a slow sink in the air, which
-    /// the vehicle follows, from reading as a touchdown.
+    /// The ground holds it up when, for [`touchdown`](AltitudeHoldConfig::touchdown)'s
+    /// `hold_s`, it stays slower than its `stopped_mps` while its target is at least
+    /// [`grounded_target_share`](AltitudeHoldConfig::grounded_target_share) of the leash below
+    /// it. It needs no descent first, so a stick pushed down on a vehicle already resting on
+    /// the ground idles it: released less than a second after a touchdown, the RealFlight
+    /// QuadCopterX locked its height there and sat at hover thrust, and a later push couldn't
+    /// idle it (#441). The target condition keeps a slow sink in the air, which the vehicle
+    /// follows, from reading as a touchdown.
+    ///
+    /// It also stands in for the low-thrust check of ArduPilot's and PX4's land detectors
+    /// (`Copter::update_land_detector`'s motors at their lower limit,
+    /// `MulticopterLandDetector::_get_ground_contact_state`'s thrust under a share of hover):
+    /// with the target that far below, the altitude loop pulls the thrust well under hover, so
+    /// a vehicle that still doesn't sink is held up by something else. At the defaults, a
+    /// resting vehicle's thrust falls to 0.27 of a 0.5 hover once the target reaches the leash;
+    /// a thrust share like PX4's 0.3 would never idle it, since the leash caps the pull.
     fn update_ground(&mut self, dt: f32, rate_mps: f32, estimated_state: &VehicleState) -> bool {
         let airborne_height_m = self.config.airborne_height_m;
         // Entering on the ground means idling there: the last setpoint idled (or guidance was
         // just primed, as at arming) within `airborne_height_m` of the ground. A hover that
         // low isn't landed: its last setpoint flew.
         let landed_on_entry =
-            self.last_idle && self.wind.on_ground(airborne_height_m, estimated_state);
+            self.hold.last_idle && self.wind.on_ground(airborne_height_m, estimated_state);
         let landed = *self.hold.landed.get_or_insert(landed_on_entry);
         if landed {
             if rate_mps <= 0.0 {
@@ -237,31 +282,35 @@ impl CopterGuidance {
             self.hold.grounded_s = 0.0;
             return false;
         }
+        let config = &self.config.altitude_hold;
         let altitude_m = estimated_state.position_m.z;
-        let below_m = self.config.altitude_leash_m * GROUNDED_TARGET_LEASHES;
+        let below_m = self.config.altitude_leash_m * config.grounded_target_share;
         let target_below = self
             .altitude_target_m
             .is_some_and(|target_m| target_m <= altitude_m - below_m);
         // `<` is false for a NaN speed: an unknown speed never reads as held still.
-        let still = estimated_state.velocity_mps.z.abs() < DEFAULT_STOPPED_MPS;
+        let still = estimated_state.velocity_mps.z.abs() < config.touchdown.stopped_mps;
         self.hold.grounded_s = if still && target_below {
             self.hold.grounded_s + dt
         } else {
             0.0
         };
-        if self.hold.grounded_s < DEFAULT_TOUCHDOWN_HOLD_S {
+        if self.hold.grounded_s < config.touchdown.hold_s {
             return false;
         }
-        // Down: the next climb starts from the vehicle, not from a target leashed below it.
+        // Down: the next climb starts from the vehicle, not from a target leashed below it,
+        // and carries none of the integral the ground pushed against.
         self.hold.landed = Some(true);
         self.altitude_target_m = None;
         self.descent_speed_mps = 0.0;
+        self.altitude = AltitudeController::default();
         true
     }
 
     /// The altitude target for a climb (up positive) of `rate_mps`. Its rate follows `rate_mps`
-    /// at up to [`AltitudeHoldConfig::accel_mps2`], starting from the vehicle's `climb_mps` (as
-    /// a descent starts, [`descent_start_m`](Self::descent_start_m)), and is fed forward.
+    /// at up to [`AltitudeHoldConfig::accel_mps2`], and is fed forward. With no target latched
+    /// it starts as a descent does ([`descent_start_m`](Self::descent_start_m)): at the
+    /// vehicle's `climb_mps` if it climbs, at rest if it sinks.
     ///
     /// - Climbing or sinking on the stick, the target moves from where it was (the vehicle's
     ///   `altitude_m` when first latched) at that rate, leashed

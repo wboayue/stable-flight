@@ -4,6 +4,7 @@ use approx::assert_relative_eq;
 use assert2::check;
 
 use super::*;
+use crate::commanders::TouchdownConfig;
 use crate::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
     LateralControllerConfig, NotchConfig, YawControllerConfig,
@@ -98,6 +99,12 @@ fn tables_cover_every_config_field() {
                 max_sink_mps: _,
                 accel_mps2: _,
                 lock_speed_mps: _,
+                touchdown:
+                    TouchdownConfig {
+                        stopped_mps: _,
+                        hold_s: _,
+                    },
+                grounded_target_share: _,
             },
         land_speed_mps: _,
         waypoint_yaw_radps: _,
@@ -132,7 +139,7 @@ fn tables_cover_every_config_field() {
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 35);
-    check!(names::<CopterGuidanceConfig>().len() == 55);
+    check!(names::<CopterGuidanceConfig>().len() == 58);
 }
 
 /// Fails to compile when the plane guidance config gains a field, so its param table gets
@@ -425,7 +432,7 @@ fn flight_loop_indexes_guidance_then_stabilizer() {
     let mut flight_loop = flight_loop();
     let guidance_count = names::<CopterGuidanceConfig>().len();
     check!(flight_loop.param_count() == all_names().len());
-    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_HOLD_LOCK"));
+    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_HOLD_GND"));
     check!(flight_loop.param_name(guidance_count) == Some("STAB_RATE_RLL_P"));
     check!(flight_loop.param_index("STAB_RATE_RLL_P") == Some(guidance_count));
     check!(flight_loop.param_name(all_names().len()) == None);

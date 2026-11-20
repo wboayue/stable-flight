@@ -39,8 +39,8 @@ fn climb_stick_maps_to_a_rate() {
     check!(uneven.climb_rate_mps(-0.5) == -0.75);
 }
 
-/// `validate` rejects a deadzone outside `[0, 1)` and a non-positive or non-finite rate or
-/// acceleration.
+/// `validate` rejects a deadzone outside `[0, 1)`, a non-positive or non-finite rate or
+/// acceleration, an invalid touchdown, and a grounded target share outside `(0, 1]`.
 #[test]
 fn config_validation() {
     let good = AltitudeHoldConfig::default();
@@ -100,6 +100,30 @@ fn config_validation() {
             "lock_speed_mps",
             AltitudeHoldConfig {
                 lock_speed_mps: 0.0,
+                ..good
+            },
+        ),
+        (
+            "hold_s",
+            AltitudeHoldConfig {
+                touchdown: TouchdownConfig {
+                    hold_s: 0.0,
+                    ..good.touchdown
+                },
+                ..good
+            },
+        ),
+        (
+            "grounded_target_share",
+            AltitudeHoldConfig {
+                grounded_target_share: 0.0,
+                ..good
+            },
+        ),
+        (
+            "grounded_target_share",
+            AltitudeHoldConfig {
+                grounded_target_share: 1.5,
                 ..good
             },
         ),
@@ -259,28 +283,81 @@ fn a_descent_the_ground_stops_idles_there() {
 }
 
 /// Switching between waypoint and altitude-hold flight carries the altitude target over, so
-/// neither steps it; leaving for attitude flight drops it.
+/// neither steps it back to the vehicle; leaving for attitude flight drops it. The vehicle
+/// lags its target here (held at 10 m), so a target rebuilt from the vehicle would differ.
 #[test]
 fn the_target_carries_between_waypoint_and_altitude_hold() {
     let mut guidance = armed_on_ground();
+    let vehicle = at(10.0, 0.0);
+    guide(
+        &mut guidance,
+        ControlInput::Attitude(AttitudeCommand {
+            throttle: 0.5,
+            ..Default::default()
+        }),
+        &vehicle,
+    );
+    // A climb on the stick runs the target to the leash above the lagging vehicle.
+    for _ in 0..(2.0 / DT) as usize {
+        guide(&mut guidance, hold(1.0), &vehicle);
+    }
+    let climbed_m = guidance.altitude_target_m.expect("latched");
+    check!(climbed_m == 11.0);
+
+    // To a waypoint below: its descent starts from the carried target, not the vehicle.
     let waypoint = ControlInput::Waypoint(WaypointCommand {
         altitude_m: 5.0,
         ..Default::default()
     });
-    guide(&mut guidance, waypoint, &at(10.0, 0.0));
-    let waypoint_target = guidance.altitude_target_m.expect("descending target");
-    guide(&mut guidance, hold(0.0), &at(10.0, 0.0));
-    let held = guidance.altitude_target_m.expect("carried");
-    assert!(
-        (held - waypoint_target).abs() < 0.02,
-        "{held} vs {waypoint_target}"
+    guide(&mut guidance, waypoint, &vehicle);
+    let waypoint_m = guidance.altitude_target_m.expect("descending target");
+    check!(
+        (waypoint_m - climbed_m).abs() < 0.02,
+        "{waypoint_m} vs {climbed_m}"
     );
+
+    // Back to a climb on the stick: it moves on from the waypoint's target.
+    guide(&mut guidance, hold(1.0), &vehicle);
+    let held_m = guidance.altitude_target_m.expect("carried");
+    check!(
+        (held_m - waypoint_m).abs() < 0.02,
+        "{held_m} vs {waypoint_m}"
+    );
+
     guide(
         &mut guidance,
         ControlInput::Attitude(AttitudeCommand::default()),
         &at(10.0, 0.0),
     );
     check!(guidance.altitude_target_m == None);
+}
+
+/// Held still on the ground against a stick down, the altitude loop has pulled the thrust well
+/// under hover before the vehicle idles: the low-thrust check of ArduPilot's and PX4's land
+/// detectors (`Copter::update_land_detector`, `MulticopterLandDetector`) that the target
+/// condition stands in for. PX4's ground contact relaxes its share to 0.6 of hover with a hover
+/// estimate; the default config falls to 0.27 of a 0.5 hover, so a vehicle that still holds
+/// its height in the air is held up by something carrying about half its weight. The integral
+/// the ground pushed against is gone after the idle.
+#[test]
+fn the_thrust_falls_well_under_hover_before_an_idle() {
+    let config = CopterGuidanceConfig::default();
+    let mut guidance = armed_on_ground();
+    guide(&mut guidance, hold(1.0), &at(0.0, 0.0));
+    let mut last_thrust = config.altitude.hover_thrust;
+    let mut idled = false;
+    for _ in 0..(4.0 / DT) as usize {
+        let setpoint = guide(&mut guidance, hold(-1.0), &at(0.0, 0.0));
+        if setpoint.idle {
+            idled = true;
+            break;
+        }
+        last_thrust = setpoint.thrust;
+    }
+    assert!(idled);
+    let share = last_thrust / config.altitude.hover_thrust;
+    check!(share < 0.6, "thrust {last_thrust} at idle");
+    check!(guidance.altitude == AltitudeController::default());
 }
 
 /// A NaN altitude holds hover thrust and latches nothing, without panicking.
