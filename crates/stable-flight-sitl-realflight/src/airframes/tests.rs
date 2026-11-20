@@ -1,6 +1,7 @@
 use super::*;
 use stable_flight::Mixer;
 use stable_flight::Vec3;
+use stable_flight::commanders::TouchdownConfig;
 use stable_flight::controllers::{LateralControllerConfig, NotchConfig, YawControllerConfig};
 use stable_flight::estimation::wind::WindConfig;
 use stable_flight::guidance::copter::AltitudeHoldConfig;
@@ -79,6 +80,11 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             max_sink_mps: 1.5,
             accel_mps2: 2.5,
             lock_speed_mps: 0.6,
+            touchdown: TouchdownConfig {
+                stopped_mps: 0.1,
+                hold_s: 1.0,
+            },
+            grounded_target_share: 0.25,
         },
         land_speed_mps: 0.7,
         waypoint_yaw_radps: 60.0_f32.to_radians(),
