@@ -63,9 +63,13 @@ impl AutotuneHoldConfig {
 ///
 /// - disarms;
 /// - lands (a pilot's land, or a failsafe's landing fallback);
-/// - moves a roll or pitch stick past [`AutotuneHoldConfig::override_stick`] (PX4's rule).
+/// - moves a roll or pitch stick past [`AutotuneHoldConfig::override_stick`] (PX4's rule),
+///   measured from center.
 ///
-/// The host ends the run on the override; a disarm reverts it anyway.
+/// Only those take over: an offboard input (a waypoint, an absolute attitude or rate) never
+/// ends the hold, so a companion's setpoints wait until it lets go. A run that ends leaves the
+/// hold engaged; [`tuning::autotune::held`](crate::tuning::autotune::held) reverts a run the
+/// pilot took over mid-run, and a disarm reverts it anyway.
 ///
 /// # Examples
 ///
@@ -127,7 +131,7 @@ impl<C: Commander> AutotuneHold<C> {
         self.overridden = false;
     }
 
-    /// Hands the vehicle back to `inner` (the run ended).
+    /// Hands the vehicle back to `inner` (the run was stopped).
     pub fn release(&mut self) {
         self.engaged = false;
     }

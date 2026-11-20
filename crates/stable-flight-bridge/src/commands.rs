@@ -317,9 +317,10 @@ fn autotune(param1: f32, copter: bool, fc: Option<FcView>) -> Request {
     if !copter {
         return Err(MavResult::MAV_RESULT_UNSUPPORTED);
     }
-    let request = if param1.is_nan() {
+    if param1.is_nan() {
         return Err(MavResult::MAV_RESULT_DENIED);
-    } else if param1 == 0.0 {
+    }
+    let request = if param1 == 0.0 {
         AutotuneRequest::Stop
     } else {
         AutotuneRequest::Start

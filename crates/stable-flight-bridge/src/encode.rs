@@ -87,7 +87,7 @@ pub(crate) fn command_ack(
 }
 
 /// Longest `STATUSTEXT` text, in bytes.
-const MAX_STATUSTEXT_LEN: usize = 50;
+pub(crate) const MAX_STATUSTEXT_LEN: usize = 50;
 
 /// `STATUSTEXT` with the flight controller's status `text`, at warning severity: it announces
 /// events the pilot should notice (e.g. a failsafe handover). Text past 50 bytes is cut at a

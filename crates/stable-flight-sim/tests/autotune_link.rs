@@ -2,7 +2,8 @@
 //! (`FcLink::wire_linked`) on attitude sticks whose throttle holds no height, as QGC's virtual
 //! joystick does, and starts and stops an autotune with `Uplink::Autotune`. The host drives the
 //! supervisor as a flight controller does: requests in, `AutotuneHold` engaged for the run,
-//! reports out. The run completes from the hold, the reports arrive in order, and a stop puts the
+//! reports out. The run completes from the hold, the reports arrive in order, the hold keeps the
+//! copter's height on the tuned gains until the pilot's sticks take over, and a stop puts the
 //! start gains back, after the run or when the pilot's sticks take over mid-run.
 
 mod common;
@@ -48,6 +49,10 @@ const STICK_THROTTLE: f32 = 0.3;
 /// 0.1 m leaves a margin over both, where the sticks' throttle alone sinks the vehicle past the
 /// envelope's 3 m (`Envelope::max_altitude_loss_m`) and fails the stage.
 const MAX_HEIGHT_CHANGE_M: f32 = 0.1;
+
+/// How long the test flies the hold after the run completes, in s: the sticks' throttle alone
+/// would sink the vehicle well past [`MAX_HEIGHT_CHANGE_M`] in it.
+const HOLD_AFTER_S: f32 = 5.0;
 
 /// How far the hold may let the vehicle drift sideways, in m: the probes' tilt steps push it
 /// 1.31 m from the hold and from a waypoint hover alike; 0.2 m of margin.
@@ -196,9 +201,10 @@ impl Flight {
 }
 
 /// Started from the link on sticks that would sink it, the copter holds where it was, the run
-/// completes, and the reports say so in order; the tuned gains fly until a stop reverts them.
+/// completes, and the reports say so in order. The hold keeps flying on the tuned gains until
+/// the pilot's roll stick takes over, which keeps them; a stop then reverts them.
 #[test]
-fn a_link_started_autotune_completes_from_the_hold_and_reverts_on_stop() {
+fn a_link_started_autotune_completes_holds_and_reverts_on_stop() {
     let mut flight = Flight::new();
     flight.take_off();
     let start_gains = *flight.flight_loop.stabilizer().config();
@@ -243,12 +249,26 @@ fn a_link_started_autotune_completes_from_the_hold_and_reverts_on_stop() {
     check!(flight.reports.iter().all(|r| r.stages == 9));
     check!(height_m < MAX_HEIGHT_CHANGE_M);
     check!(drift_m < MAX_DRIFT_M);
-    check!(!flight.flight_loop.commander().is_engaged());
     let tuned = *flight.flight_loop.stabilizer().config();
     check!(tuned != start_gains);
     check!(TunedLoop::RollRate.gains(&tuned) != TunedLoop::RollRate.gains(&start_gains));
 
-    // After the run, the sticks fly again; a stop puts the start gains back.
+    // After the run the hold keeps the height, though the sticks' throttle would sink it.
+    let mut sank_m: f32 = 0.0;
+    for _ in 0..common::ticks(HOLD_AFTER_S) {
+        flight.tick();
+        sank_m = sank_m.max(start_m.z - flight.flight_loop.state().position_m.z);
+    }
+    check!(flight.flight_loop.commander().is_engaged());
+    check!(sank_m < MAX_HEIGHT_CHANGE_M);
+
+    // The pilot's roll stick takes the copter back, on the tuned gains.
+    flight.sticks(0.2);
+    flight.fly(0.1);
+    check!(!flight.flight_loop.commander().is_engaged());
+    check!(*flight.flight_loop.stabilizer().config() == tuned);
+
+    // A stop puts the start gains back.
     flight.reports.clear();
     flight.send(Uplink::Autotune(AutotuneRequest::Stop));
     flight.fly(0.1);

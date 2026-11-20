@@ -22,6 +22,12 @@ mod tests;
 ///
 /// `None` for a progress this bridge doesn't know (`AutotuneProgress` is non-exhaustive).
 pub(crate) fn statustext(report: &AutotuneReport) -> Option<STATUSTEXT_DATA> {
+    let (severity, text) = line(report)?;
+    Some(encode::statustext_at(&text, severity))
+}
+
+/// [`statustext`]'s text, prefix included, before encoding: within 50 bytes, so nothing is cut.
+fn line(report: &AutotuneReport) -> Option<(MavSeverity, String)> {
     use MavSeverity::*;
     let (severity, text) = match report.progress {
         AutotuneProgress::Started => (
@@ -44,12 +50,13 @@ pub(crate) fn statustext(report: &AutotuneReport) -> Option<STATUSTEXT_DATA> {
             passed,
         } => (
             MAV_SEVERITY_INFO,
-            format!(
-                "{} {} {}",
-                name(target),
-                pid(gains),
-                if passed { "pass" } else { "fail" }
-            ),
+            with_gains(gains, |pid| {
+                format!(
+                    "{} {pid} {}",
+                    name(target),
+                    if passed { "pass" } else { "fail" }
+                )
+            }),
         ),
         AutotuneProgress::StageDone {
             target,
@@ -57,11 +64,13 @@ pub(crate) fn statustext(report: &AutotuneReport) -> Option<STATUSTEXT_DATA> {
             outcome,
         } => (
             MAV_SEVERITY_NOTICE,
-            format!("{} {} {}", name(target), outcome_word(outcome), pid(gains)),
+            with_gains(gains, |pid| {
+                format!("{} {} {pid}", name(target), outcome_word(outcome))
+            }),
         ),
         AutotuneProgress::Lowered { target, gains } => (
             MAV_SEVERITY_INFO,
-            format!("{} lowered {}", name(target), pid(gains)),
+            with_gains(gains, |pid| format!("{} lowered {pid}", name(target))),
         ),
         AutotuneProgress::Unsettled(target) => (
             MAV_SEVERITY_INFO,
@@ -79,11 +88,11 @@ pub(crate) fn statustext(report: &AutotuneReport) -> Option<STATUSTEXT_DATA> {
         AutotuneProgress::Idle => (MAV_SEVERITY_INFO, "nothing to stop".into()),
         _ => return None,
     };
-    Some(encode::statustext_at(
-        &format!("AutoTune: {text}"),
-        severity,
-    ))
+    Some((severity, format!("{PREFIX}{text}")))
 }
+
+/// What every autotune text starts with, as ArduPilot's do.
+const PREFIX: &str = "AutoTune: ";
 
 fn name(target: TunedLoop) -> &'static str {
     match target {
@@ -96,23 +105,41 @@ fn name(target: TunedLoop) -> &'static str {
     }
 }
 
-/// `gains` in three significant digits each ("P0.620 I0.310 D0.0100").
-fn pid(gains: Gains) -> String {
+/// The text `around` makes of `gains`, with as many significant digits per gain, three down
+/// to one, as keep it and [`PREFIX`] within `STATUSTEXT`'s 50 bytes. Three fit any gain of
+/// 0.01 or more; smaller ones (a D of 0.00123 is eight characters with its letter) take fewer,
+/// rather than the text being cut mid-digit. At one digit the longest line, a lowered pitch
+/// rate, is 49 bytes.
+fn with_gains(gains: Gains, around: impl Fn(&str) -> String) -> String {
+    let fits = |text: &String| PREFIX.len() + text.len() <= encode::MAX_STATUSTEXT_LEN;
+    let mut text = around(&pid(gains, 3));
+    for digits in [2, 1] {
+        if fits(&text) {
+            break;
+        }
+        text = around(&pid(gains, digits));
+    }
+    text
+}
+
+/// `gains` in `digits` significant digits each ("P0.620 I0.310 D0.0100" at three).
+fn pid(gains: Gains, digits: i32) -> String {
     format!(
         "P{} I{} D{}",
-        significant(gains.p),
-        significant(gains.i),
-        significant(gains.d)
+        significant(gains.p, digits),
+        significant(gains.i, digits),
+        significant(gains.d, digits)
     )
 }
 
-/// `value` to three significant digits: 12.3, 0.620, 0.0123.
-fn significant(value: f32) -> String {
+/// `value` to `digits` significant digits (at three: 12.3, 0.620, 0.0123), or all its integer
+/// digits when it has more.
+fn significant(value: f32, digits: i32) -> String {
     if value == 0.0 || !value.is_finite() {
         return format!("{value}");
     }
     let magnitude = value.abs().log10().floor() as i32;
-    let decimals = (2 - magnitude).max(0) as usize;
+    let decimals = (digits - 1 - magnitude).max(0) as usize;
     format!("{value:.decimals$}")
 }
 
