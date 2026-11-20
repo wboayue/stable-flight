@@ -64,7 +64,7 @@ use stable_flight::tuning::autotune::{
 use stable_flight::{Configurable, FlightLoop};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
-use stable_flight_sitl::autotune::{ThenLand, format_brief, is_inverted, log_event};
+use stable_flight_sitl::autotune::{HostTiming, ThenLand, format_brief, is_inverted, log_event};
 use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
@@ -76,9 +76,6 @@ use stable_flight_sitl_xplane::{XPlaneConfiguration, XPlaneVehicle, airframes};
 const LOOP_HZ: f64 = 250.0;
 /// The flight loop's period, in s: the supervisor's `dt`.
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
-/// The longest wall-clock gap between ticks that isn't a freeze: `copter-autotune-realflight`'s,
-/// past several of X-Plane's frames (8–17 ms apart).
-const FREEZE_GAP: Duration = Duration::from_millis(50);
 /// How long the vehicle's state may stay stale, X-Plane unpaused, before the run ends, exit
 /// status 1: X-Plane isn't coming back, and an unattended run shouldn't wait on it.
 const STALE_EXIT: Duration = Duration::from_secs(30);
@@ -249,9 +246,8 @@ fn main() -> ExitCode {
         args.rate_p_scale
     );
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
-    let mut host_slow = false;
+    let mut timing = HostTiming::default();
     let mut ticks = 0u32;
-    let mut last_tick = Duration::ZERO;
     let mut inverted_since = None;
     let mut stayed_inverted = false;
     let mut stale_since = None;
@@ -275,17 +271,7 @@ fn main() -> ExitCode {
             shutdown.trigger();
             return;
         }
-        // A freeze spoils a running probe's timing (it runs again), and the vehicle moved
-        // meanwhile.
-        if stats.elapsed.saturating_sub(last_tick) > FREEZE_GAP {
-            autotune.note_stall();
-        }
-        last_tick = stats.elapsed;
-        // The runner logs the stretch itself, with its rate and time.
-        if stats.host_slow != host_slow {
-            host_slow = stats.host_slow;
-            info!("autotune {}", if host_slow { "waits" } else { "goes on" });
-        }
+        timing.update(stats, &mut autotune);
         // A stale state is the aircraft flying on unseen; the vehicle logs why.
         let stale = flight_loop.vehicle().state_is_stale();
         // Paused, the aircraft is frozen with its state: the run waits on it for good, since
@@ -322,7 +308,6 @@ fn main() -> ExitCode {
             _ => {}
         }
         autotune.set_state_stale(stale);
-        autotune.set_host_slow(host_slow);
         // The landing waits for a fresh state: on a stale one, the touchdown detector would
         // read the held vertical speed as a touchdown and disarm in the air.
         if finished && !stale && !land.is_landing() {

@@ -42,7 +42,7 @@ use stable_flight::{Commander, Configurable, FailsafeState, FlightLoop};
 use stable_flight_link::autotune::{self, AutotuneProgress};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
-use stable_flight_sitl::autotune::log_event;
+use stable_flight_sitl::autotune::{HostTiming, log_event};
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
@@ -56,10 +56,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 /// Loop rate, in Hz, and its tick, in s.
 const LOOP_HZ: f64 = 250.0;
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
-
-/// A gap between ticks this long means the host froze, spoiling a running probe's timing (as
-/// in `copter-autotune-realflight`).
-const FREEZE_GAP: Duration = Duration::from_millis(50);
 
 /// The example that tunes, heading the printed gains.
 const SOURCE: &str = "copter-companion-realflight";
@@ -139,7 +135,7 @@ fn main() {
     let mut tune = Autotune::new(&plan, Envelope::default()).expect("valid autotune plan");
 
     let mut failsafe = None;
-    let mut last_tick = Duration::ZERO;
+    let mut timing = HostTiming::default();
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
         match poller.poll(flight_loop) {
@@ -152,11 +148,7 @@ fn main() {
 
         // The autotune: the host's timing in, the link's requests, the pilot's override, then
         // a step of the run, each reported down the link.
-        if stats.elapsed.saturating_sub(last_tick) > FREEZE_GAP {
-            tune.note_stall();
-        }
-        last_tick = stats.elapsed;
-        tune.set_host_slow(stats.host_slow);
+        timing.update(stats, &mut tune);
         tune.set_state_stale(flight_loop.vehicle().state_is_stale());
         let served = autotune::serve(&mut poller, &mut tune, flight_loop, LOOP_DT_S);
         match served.answer {

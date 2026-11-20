@@ -81,7 +81,7 @@ use stable_flight::view::{View, tailsitter_rotation};
 use stable_flight::{Configurable, FlightLoop};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
-use stable_flight_sitl::autotune::{ThenLand, format_brief, is_inverted, log_event};
+use stable_flight_sitl::autotune::{HostTiming, ThenLand, format_brief, is_inverted, log_event};
 use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
@@ -100,11 +100,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const LOOP_HZ: f64 = 250.0;
 /// The flight loop's period, in s: the supervisor's `dt`.
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
-/// The longest wall-clock gap between ticks that isn't a freeze: past the fit's 40 ms of delay
-/// and a rate step's 30 ms rise. The runner's resyncs aren't freezes: at about 223 Hz it falls
-/// 100 ms behind every few seconds with no tick late by much (QuadCopterX in RealFlight: 2,216
-/// resyncs in a run, 3 gaps over 100 ms, #524).
-const FREEZE_GAP: Duration = Duration::from_millis(50);
 /// How long the vehicle's state may stay stale before the run ends, exit status 1: the link
 /// isn't coming back, and an unattended batch shouldn't wait on it (#309).
 const STALE_EXIT: Duration = Duration::from_secs(30);
@@ -444,9 +439,8 @@ fn main() -> ExitCode {
         args.rate_p_scale
     );
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
-    let mut host_slow = false;
+    let mut timing = HostTiming::default();
     let mut ticks = 0u32;
-    let mut last_tick = Duration::ZERO;
     let mut inverted_since = None;
     let mut stayed_inverted = false;
     let mut started_at = None;
@@ -470,17 +464,7 @@ fn main() -> ExitCode {
             shutdown.trigger();
             return;
         }
-        // A freeze spoils a running probe's timing (it runs again), and the vehicle moved
-        // meanwhile.
-        if stats.elapsed.saturating_sub(last_tick) > FREEZE_GAP {
-            autotune.note_stall();
-        }
-        last_tick = stats.elapsed;
-        // The runner logs the stretch itself, with its rate and time.
-        if stats.host_slow != host_slow {
-            host_slow = stats.host_slow;
-            info!("autotune {}", if host_slow { "waits" } else { "goes on" });
-        }
+        timing.update(stats, &mut autotune);
         if let (Some(drop), Some(started_at)) = (args.drop_link, started_at) {
             cut.store(
                 drop.is_cut(stats.elapsed.saturating_sub(started_at)),
@@ -513,7 +497,6 @@ fn main() -> ExitCode {
             _ => {}
         }
         autotune.set_state_stale(stale);
-        autotune.set_host_slow(host_slow);
         // The landing waits for a fresh state: on a stale one, the touchdown detector would
         // read the held vertical speed as a touchdown and disarm in the air.
         if finished && !stale && !land.is_landing() {

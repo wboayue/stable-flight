@@ -34,7 +34,7 @@ pub struct InvalidFrequency(pub f64);
 
 /// What a [`RealTimeRunner::run`] achieved, or (passed to
 /// [`run_with`](RealTimeRunner::run_with)'s hook) has achieved so far.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct RunStats {
     /// Ticks executed.
     pub ticks: u64,

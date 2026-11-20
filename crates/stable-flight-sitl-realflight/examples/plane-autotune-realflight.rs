@@ -72,7 +72,7 @@ use stable_flight_link::LinkRx;
 use stable_flight_link::fc::{FcLink, FcPoller};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::autotune::{
-    PlaneHome, PlaneTuneFlight, PlaneTuneSwitch, format_brief, is_inverted, log_event,
+    HostTiming, PlaneHome, PlaneTuneFlight, PlaneTuneSwitch, format_brief, is_inverted, log_event,
 };
 use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
@@ -90,9 +90,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const LOOP_HZ: f64 = 250.0;
 /// The flight loop's period, in s: the supervisor's `dt`.
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
-/// The longest wall-clock gap between ticks that isn't a freeze (`copter-autotune-realflight`'s,
-/// #524).
-const FREEZE_GAP: Duration = Duration::from_millis(50);
 /// How long the vehicle's state may stay stale before the example stops, exit status 1 (#309).
 const STALE_EXIT: Duration = Duration::from_secs(30);
 /// How long the vehicle may stay inverted before the run ends (#523).
@@ -399,9 +396,8 @@ struct Flight<'a, R> {
 /// Where the run stands, as [`fly`] tracks it between ticks.
 #[derive(Default)]
 struct RunState {
-    host_slow: bool,
+    timing: HostTiming,
     ticks: u32,
-    last_tick: Duration,
     inverted_since: Option<Duration>,
     stale_since: Option<Duration>,
     /// Seconds flown in plane mode before the hold.
@@ -462,18 +458,7 @@ where
             shutdown.trigger();
             return;
         }
-        // A freeze spoils a running probe's timing (it runs again).
-        if stats.elapsed.saturating_sub(run.last_tick) > FREEZE_GAP {
-            flight.autotune.note_stall();
-        }
-        run.last_tick = stats.elapsed;
-        if stats.host_slow != run.host_slow {
-            run.host_slow = stats.host_slow;
-            info!(
-                "autotune {}",
-                if run.host_slow { "waits" } else { "goes on" }
-            );
-        }
+        run.timing.update(stats, &mut flight.autotune);
         // A stale state is the aircraft flying on unseen (#309).
         let stale = flight_loop.vehicle().state_is_stale();
         match (stale, run.stale_since) {
@@ -500,7 +485,6 @@ where
             _ => {}
         }
         flight.autotune.set_state_stale(stale);
-        flight.autotune.set_host_slow(run.host_slow);
         match flight.poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");
