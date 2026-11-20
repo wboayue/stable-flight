@@ -1085,7 +1085,8 @@ impl CopterGuidance {
             thrust,
             transition: false,
             // Never ground idle: the altitude loop's zero is a vehicle in the air shedding
-            // climb. TODO(#395): idle once a land detector reports a touchdown.
+            // climb. TODO(#395): idle once a land detector reports a touchdown, as altitude
+            // hold's `update_ground` reads one with no descent needed.
             idle: false,
         }
     }
