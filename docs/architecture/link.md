@@ -49,9 +49,9 @@ decides. What it translates: the [bridge README](../../crates/stable-flight-brid
 
 A ground station starts and stops an autotune (`Uplink::Autotune`) and follows it
 (`Downlink::Autotune`); the run itself stays on the flight controller. Its host drives the
-supervisor between ticks with `autotune::serve`: a start engages an `AutotuneHold` where the
-vehicle is, a stop or the pilot's sticks revert the run, and each step goes down as an
-`AutotuneReport`. So a link lost mid-run changes nothing the run needs: the failsafe holds,
+supervisor between ticks with `autotune::serve`, which maps requests and reports onto core's
+`tuning::autotune::held`: a start engages an `AutotuneHold` where the vehicle is, a stop or
+the pilot's sticks mid-run revert the run, and each step goes down as an `AutotuneReport`. So a link lost mid-run changes nothing the run needs: the failsafe holds,
 and a disarm reverts.
 
 * **The plan is the flight controller's.** A start carries no preset: the airframe picks

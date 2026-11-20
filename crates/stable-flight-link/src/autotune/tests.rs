@@ -221,3 +221,96 @@ fn requests_and_reports_round_trip() {
         check!(Downlink::decode(&mut frame) == Ok(msg), "{progress:?}");
     }
 }
+
+/// A stop and the pilot's take-over in one [`serve`] report one revert: the stop's.
+#[test]
+fn a_stop_and_a_take_over_together_revert_once() {
+    use core::cell::Cell;
+    use core::time::Duration;
+    use std::rc::Rc;
+
+    use stable_flight::commanders::AutotuneHoldConfig;
+    use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    use stable_flight::mixers::TableMixer;
+    use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    use stable_flight::testing::NullVehicle;
+    use stable_flight::tuning::autotune::{Envelope, StagePlan};
+    use stable_flight::{AttitudeCommand, Command, ControlInput, VehicleState};
+
+    use crate::fc::{FcLink, FcLinkConfig};
+    use crate::loopback::Loopback;
+    use crate::{RecvMessage, SendMessage};
+
+    struct Sticks(Rc<Cell<Command>>);
+    impl Commander for Sticks {
+        fn next_command(&mut self, _dt: f32, _state: &VehicleState) -> Command {
+            self.0.get()
+        }
+    }
+    let sticks = |roll| {
+        Command::armed(ControlInput::Attitude(AttitudeCommand {
+            throttle: 0.5,
+            roll,
+            ..Default::default()
+        }))
+    };
+    const DT: f32 = 0.004;
+
+    let loopback = Loopback::<64>::new();
+    let (mut companion, fc_end) = loopback.split();
+    let (rx, tx) = fc_end.into_halves();
+    let mut link = FcLink::<16, 8>::new();
+    let (mut poller, telemetry) = link.wire_with(rx, tx, FcLinkConfig::default());
+    let command = Rc::new(Cell::new(sticks(0.0)));
+    let hold = AutotuneHold::new(Sticks(Rc::clone(&command)), AutotuneHoldConfig::default())
+        .expect("valid");
+    let state = VehicleState {
+        position_m: [0.0, 0.0, 10.0].into(),
+        ..Default::default()
+    };
+    let mut flight_loop = FlightLoop::new(
+        hold,
+        NullVehicle::with_state(state),
+        CopterGuidance::new(CopterGuidanceConfig::default()),
+        CopterStabilizer::new(CopterStabilizerConfig::default()),
+        TableMixer::quad_x(),
+        telemetry,
+    );
+    let mut autotune =
+        Autotune::new(&StagePlan::copter_design_search(), Envelope::default()).expect("valid");
+    let mut buf = [0u8; MAX_FRAME_LEN];
+    let request = |companion: &mut _, request| {
+        SendMessage::send_message(
+            companion,
+            &Uplink::Autotune(request),
+            &mut [0u8; MAX_FRAME_LEN],
+        )
+        .expect("sent");
+    };
+    flight_loop.prime();
+    flight_loop.step(Duration::from_secs_f32(DT));
+
+    request(&mut companion, AutotuneRequest::Start);
+    poller.poll(&mut flight_loop).expect("polled");
+    let served = serve(&mut poller, &mut autotune, &mut flight_loop, DT);
+    assert2::assert!(served.answer == Some(AutotuneProgress::Started));
+
+    command.set(sticks(0.5));
+    flight_loop.step(Duration::from_secs_f32(DT));
+    request(&mut companion, AutotuneRequest::Stop);
+    poller.poll(&mut flight_loop).expect("polled");
+    let served = serve(&mut poller, &mut autotune, &mut flight_loop, DT);
+    check!(served.answer == Some(AutotuneProgress::Reverted));
+    flight_loop.step(Duration::from_secs_f32(DT));
+
+    let mut reverts = 0;
+    while let Some(msg) = companion
+        .recv_message::<Downlink>(&mut buf)
+        .expect("decodes")
+    {
+        if let Downlink::Autotune(report) = msg {
+            reverts += usize::from(report.progress == AutotuneProgress::Reverted);
+        }
+    }
+    check!(reverts == 1);
+}

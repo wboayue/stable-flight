@@ -10,7 +10,7 @@ use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneAbort, AutotuneEvent, AutotuneStatus, CopterSide, Outcome, SideTunable,
-    StartError,
+    StartError, held,
 };
 use stable_flight::{Commander, FlightLoop};
 
@@ -205,15 +205,15 @@ pub struct Served {
 }
 
 /// Runs `autotune` between ticks for a flight controller flown from the link, from an
-/// [`AutotuneHold`] around its commander, reporting each step down the link:
+/// [`AutotuneHold`] around its commander ([`held`] couples the two), reporting each step down
+/// the link:
 ///
 /// 1. Serves `poller`'s requests: a [`Start`](AutotuneRequest::Start) starts the run and
-///    [engages](AutotuneHold::engage) the hold where the vehicle is (or is refused); a
-///    [`Stop`](AutotuneRequest::Stop) releases the hold and [reverts](Autotune::revert) the
-///    run.
-/// 2. Reverts the run when the pilot took over from the hold
-///    ([`take_override`](AutotuneHold::take_override)).
-/// 3. Advances the run by `dt` s, releasing the hold once it ends.
+///    engages the hold where the vehicle is ([`held::start`], or is refused); a
+///    [`Stop`](AutotuneRequest::Stop) releases the hold and reverts the run ([`held::stop`]).
+/// 2. Reverts the run if the pilot took over from the hold mid-run, then advances it by `dt` s
+///    ([`held::step`]). The hold stays engaged once the run ends, until the pilot takes over
+///    or a stop.
 ///
 /// Each answer and step goes to [`FcPoller::report_autotune`]. The host still tells the
 /// supervisor about its own timing ([`Autotune::note_stall`], [`Autotune::set_host_slow`],
@@ -284,21 +284,14 @@ where
 
     while let Some(request) = poller.autotune_request() {
         let answer = match request {
-            AutotuneRequest::Start => match autotune.start(flight_loop) {
-                Ok(()) => {
-                    let state = flight_loop.state().clone();
-                    flight_loop.commander_mut().engage(&state);
-                    AutotuneProgress::Started
-                }
+            AutotuneRequest::Start => match held::start(autotune, flight_loop) {
+                Ok(()) => AutotuneProgress::Started,
                 Err(refused) => AutotuneProgress::Refused(refused),
             },
-            AutotuneRequest::Stop => {
-                flight_loop.commander_mut().release();
-                match autotune.revert(flight_loop) {
-                    Some(_) => AutotuneProgress::Reverted,
-                    None => AutotuneProgress::Idle,
-                }
-            }
+            AutotuneRequest::Stop => match held::stop(autotune, flight_loop) {
+                Some(_) => AutotuneProgress::Reverted,
+                None => AutotuneProgress::Idle,
+            },
         };
         report(
             poller,
@@ -307,7 +300,9 @@ where
         served.answer = Some(answer);
     }
 
-    if flight_loop.commander_mut().take_override() && autotune.revert(flight_loop).is_some() {
+    let before = autotune.status();
+    let step = held::step(autotune, flight_loop, dt);
+    if step.reverted {
         let answer = AutotuneProgress::Reverted;
         report(
             poller,
@@ -315,17 +310,12 @@ where
         );
         served.answer = Some(answer);
     }
-
-    let before = autotune.status();
-    let event = autotune.update(flight_loop, dt);
-    if event.is_some() && !autotune.is_running() {
-        flight_loop.commander_mut().release();
-    }
-    if let Some(step) = event
+    let event = step.event;
+    if let Some(step_report) = event
         .as_ref()
         .and_then(|e| AutotuneReport::from_event(e, before, stages))
     {
-        report(poller, step);
+        report(poller, step_report);
     }
     Served { event, ..served }
 }
