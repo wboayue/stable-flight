@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `copter-companion-realflight` autotunes from the link (#307): the copter design search
   started and stopped by `Uplink::Autotune` (the bridge's `MAV_CMD_DO_AUTOTUNE_ENABLE`, or
   `link_pilot --autotune`), flown from an `AutotuneHold`, its reports sent down the link.
+- `copter-companion-realflight` logs `autotune waits` and `autotune goes on` as the host turns
+  slow and recovers (#705), as the other autotune examples do.
 
 ## [0.3.0] - 2026-11-12
 

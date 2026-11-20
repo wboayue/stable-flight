@@ -399,7 +399,6 @@ fn inverted_is_a_tilt_past_ninety_degrees_in_the_frame() {
     }
 }
 
-/// A step and a summary read in ms and fractions of the step, `-` where there's no sample.
 /// A gap between ticks past `FREEZE_GAP` is a freeze, measured from priming on the first tick
 /// and from the last tick after it; at the gap or under it isn't. The runner's `host_slow`
 /// passes through in both directions. Rows run in order on one host.
@@ -440,6 +439,7 @@ fn host_timing_reads_freezes_past_the_gap_and_passes_host_slow() {
     check!(timing.update(&late, &mut autotune).froze);
 }
 
+/// A step and a summary read in ms and fractions of the step, `-` where there's no sample.
 #[test]
 fn formats_steps_and_summaries() {
     let metrics = StepMetrics {
