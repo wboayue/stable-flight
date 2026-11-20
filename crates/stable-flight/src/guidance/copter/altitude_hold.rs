@@ -46,7 +46,7 @@ pub const DEFAULT_LOCK_SPEED_MPS: f32 = 0.6;
 /// let config = AltitudeHoldConfig::default();
 /// assert_eq!(config.climb_rate_mps(0.1), 0.0); // inside the deadzone: hold
 /// assert_eq!(config.climb_rate_mps(1.0), 2.5); // full up
-/// assert_eq!(config.climb_rate_mps(-0.6), -0.75); // halfway from the deadzone down
+/// assert_eq!(config.climb_rate_mps(-1.0), -1.5); // full down: a slower sink
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AltitudeHoldConfig {
