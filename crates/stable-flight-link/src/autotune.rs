@@ -217,7 +217,8 @@ pub struct Served {
 ///
 /// Each answer and step goes to [`FcPoller::report_autotune`]. The host still tells the
 /// supervisor about its own timing ([`Autotune::note_stall`], [`Autotune::set_host_slow`],
-/// [`Autotune::set_state_stale`]) and logs what [`Served`] returns.
+/// [`Autotune::set_state_stale`]; a sitl host passes the first two from
+/// `stable_flight_sitl::autotune::HostTiming`) and logs what [`Served`] returns.
 ///
 /// # Examples
 ///

@@ -1,8 +1,9 @@
 //! Simulator-independent pieces of an autotune flight: the commanders that hover on a script
 //! and then land ([`ThenLand`]) or fly a script into plane flight, hold the plane there, and
 //! come home ([`PlaneTuneFlight`]), the checks a run stops or starts on ([`is_inverted`],
-//! [`ThenLand::at_hover_point`]), the host's timing passed to the supervisor ([`HostTiming`]), and the log of each [`AutotuneEvent`] ([`log_event`]), down
-//! to the tuned gains printed for pasting into an airframe ([`TunedConfig`]). Each backend's
+//! [`ThenLand::at_hover_point`]), the host's timing passed to the supervisor ([`HostTiming`]),
+//! and the log of each [`AutotuneEvent`] ([`log_event`]), down to the tuned gains printed for
+//! pasting into an airframe ([`TunedConfig`]). Each backend's
 //! autotune example wires its own vehicle around them.
 
 use std::cell::{Cell, RefCell};

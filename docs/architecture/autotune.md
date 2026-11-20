@@ -41,8 +41,8 @@ feedback and a search from the start gains were rejected (see the [design search
   candidate gains), "finish with these gains", or "fail". It never touches the flight loop, so its
   decisions are tested by feeding it inputs. `Autotune` executes it: it settles before each
   probe, runs it, guards the envelope, and commits. A step clipped too long, or one during which
-  the host froze (`Autotune::note_stall`, e.g. a tick over 50 ms after the last by sitl's
-  `RunStats::elapsed`), runs again, within a budget of steps in a row (3 clipped, 10 stalled);
+  the host froze (`Autotune::note_stall`; sitl's `HostTiming` reads a tick past its
+  `FREEZE_GAP` after the last as one), runs again, within a budget of steps in a row (3 clipped, 10 stalled);
   so does a frozen probe's abort, and for `Envelope::recovery_s` after a freeze breaches don't
   count: the vehicle moved while the host saw nothing (RealFlight returned one state for
   0.47 s and the vehicle came back at −19° pitch, #524). The runner's resyncs
