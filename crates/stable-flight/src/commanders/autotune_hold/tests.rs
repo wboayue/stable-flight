@@ -30,6 +30,15 @@ fn sticks(roll: f32, pitch: f32) -> Command {
     }))
 }
 
+fn hold_sticks(roll: f32, pitch: f32) -> Command {
+    Command::armed(ControlInput::AltitudeHold(crate::AltitudeHoldCommand {
+        climb: 1.0,
+        roll,
+        pitch,
+        yaw: 1.0,
+    }))
+}
+
 fn state_at(x_m: f32, altitude_m: f32) -> VehicleState {
     VehicleState {
         position_m: [x_m, 2.0, altitude_m].into(),
@@ -122,6 +131,9 @@ fn the_inner_commander_takes_over() {
         ("roll rate stick", rate(0.06, 0.0), true),
         ("pitch rate stick", rate(0.0, -0.06), true),
         ("within the threshold", sticks(0.04, -0.04), false),
+        ("altitude hold roll stick", hold_sticks(0.06, 0.0), true),
+        ("altitude hold pitch stick", hold_sticks(0.0, -0.06), true),
+        ("altitude hold climb stick", hold_sticks(0.0, 0.0), false),
         ("NaN sticks", sticks(f32::NAN, f32::NAN), false),
         ("yaw and throttle", yaw_and_throttle, false),
         ("rate yaw", rate(0.0, 0.0), false),

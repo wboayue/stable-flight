@@ -19,6 +19,8 @@
 //! afterwards, in the air or landed, puts the start gains back. Each step goes down the link
 //! as an `AutotuneReport`.
 //!
+//! `--record <csv>` writes every tick's telemetry (sitl's `CopterColumns`).
+//!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 //! cargo run --bin link_pilot   # in a second terminal
@@ -41,6 +43,7 @@ use stable_flight_link::autotune::{self, AutotuneProgress};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::autotune::log_event;
+use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{
@@ -73,6 +76,9 @@ struct Args {
     /// The companion's link address.
     #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
+    /// Write every tick's telemetry to this CSV (sitl's `CopterColumns`).
+    #[arg(long)]
+    record: Option<String>,
 }
 
 fn main() {
@@ -120,7 +126,11 @@ fn main() {
     let commander =
         AutotuneHold::new(failsafe, AutotuneHoldConfig::default()).expect("valid hold config");
 
-    let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, link);
+    let recorder = CsvRecorder::create(args.record.as_deref(), CopterColumns)
+        .expect("failed to create the record CSV");
+    let telemetry = (link, recorder);
+    let mut flight_loop =
+        FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");

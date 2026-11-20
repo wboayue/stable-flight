@@ -160,6 +160,7 @@ impl<C: Commander> AutotuneHold<C> {
         match command.input {
             ControlInput::Land(_) => true,
             ControlInput::Attitude(sticks) => past(sticks.roll) || past(sticks.pitch),
+            ControlInput::AltitudeHold(sticks) => past(sticks.roll) || past(sticks.pitch),
             ControlInput::Rate(sticks) => past(sticks.roll_rate) || past(sticks.pitch_rate),
             _ => false,
         }

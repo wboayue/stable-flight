@@ -325,12 +325,18 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
 }
 
 /// Whether the sticks in `now` moved more than `delta` on any axis from `reference`; a change of
-/// kind (attitude ↔ rate) counts. A NaN axis never counts as moved.
+/// kind (attitude, rate, altitude hold) counts. A NaN axis never counts as moved.
 fn sticks_moved(reference: &ControlInput, now: &ControlInput, delta: f32) -> bool {
     let moved = |a: f32, b: f32| (a - b).abs() > delta;
     match (reference, now) {
         (ControlInput::Attitude(a), ControlInput::Attitude(b)) => {
             moved(a.throttle, b.throttle)
+                || moved(a.roll, b.roll)
+                || moved(a.pitch, b.pitch)
+                || moved(a.yaw, b.yaw)
+        }
+        (ControlInput::AltitudeHold(a), ControlInput::AltitudeHold(b)) => {
+            moved(a.climb, b.climb)
                 || moved(a.roll, b.roll)
                 || moved(a.pitch, b.pitch)
                 || moved(a.yaw, b.yaw)

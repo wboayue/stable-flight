@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The recorders' `stick_yaw` and `stick_throttle` columns read `ControlInput::AltitudeHold`:
+  its yaw stick, and its climb stick in `[-1, 1]` (#441).
+- `CopterColumns` ends with `stick_throttle`, as `TailsitterColumns` has it (#441).
 - The autotune log prints a plane fit's stiffness, damping, and control to two decimals (#694).
 
 ## [0.3.0] - 2026-11-12

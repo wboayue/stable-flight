@@ -55,6 +55,14 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_WND_AX_SPD", wind.max_axial_speed_mps),
         param!("GUID_ALT_IBAND", altitude.integration_band_m),
         param!("GUID_LAT_BRK_SHR", lateral.braking_share),
+        param!("GUID_HOLD_DZ", altitude_hold.deadzone),
+        param!("GUID_HOLD_CLMB", altitude_hold.max_climb_mps),
+        param!("GUID_HOLD_SINK", altitude_hold.max_sink_mps),
+        param!("GUID_HOLD_ACC", altitude_hold.accel_mps2),
+        param!("GUID_HOLD_LOCK", altitude_hold.lock_speed_mps),
+        param!("GUID_HOLD_STOP", altitude_hold.touchdown.stopped_mps),
+        param!("GUID_HOLD_DOWN_S", altitude_hold.touchdown.hold_s),
+        param!("GUID_HOLD_GND", altitude_hold.grounded_target_share),
     ];
 }
 
@@ -339,6 +347,57 @@ mod metadata {
                 .param(
                     "GUID_LAT_BRK_SHR",
                     "Share of GUID_LAT_ACC the braking curve slows at",
+                )
+                .above(0.0)
+                .at_most(1.0),
+            STICKS
+                .param(
+                    "GUID_HOLD_DZ",
+                    "Climb stick travel from center that holds the height in altitude hold",
+                )
+                .at_least(0.0)
+                .below(1.0),
+            STICKS
+                .param("GUID_HOLD_CLMB", "Climb rate at full up stick in altitude hold")
+                .with_units("m/s")
+                .above(0.0),
+            STICKS
+                .param("GUID_HOLD_SINK", "Sink rate at full down stick in altitude hold")
+                .with_units("m/s")
+                .above(0.0),
+            STICKS
+                .param(
+                    "GUID_HOLD_ACC",
+                    "Acceleration the climb rate follows the stick at in altitude hold",
+                )
+                .with_units("m/s/s")
+                .above(0.0),
+            STICKS
+                .param(
+                    "GUID_HOLD_LOCK",
+                    "Vertical speed under which a centered climb stick locks the height",
+                )
+                .with_units("m/s")
+                .above(0.0),
+            LANDING
+                .param(
+                    "GUID_HOLD_STOP",
+                    "Vertical speed under which altitude hold reads the vehicle as still",
+                )
+                .with_units("m/s")
+                .above(0.0)
+                .below(DESCENDING_MPS),
+            LANDING
+                .param(
+                    "GUID_HOLD_DOWN_S",
+                    "How long altitude hold must read still against a stick down to idle",
+                )
+                .with_units("s")
+                .above(0.0),
+            LANDING
+                .param(
+                    "GUID_HOLD_GND",
+                    "Share of GUID_ALT_LEASH the target must run below to read as grounded",
                 )
                 .above(0.0)
                 .at_most(1.0),

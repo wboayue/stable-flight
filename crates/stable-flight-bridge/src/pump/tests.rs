@@ -252,8 +252,11 @@ fn forwards_the_ground_stations_joystick_as_commands() {
             _ => None,
         })
         .collect();
-    let [stable_flight_link::stable_flight::ControlInput::Attitude(sticks)] = commands[..] else {
-        panic!("expected one attitude command, got {commands:?}");
+    // The default throttle is a climb rate: z 600 is a fifth of the way up from center.
+    let [stable_flight_link::stable_flight::ControlInput::AltitudeHold(sticks)] = commands[..]
+    else {
+        panic!("expected one altitude hold, got {commands:?}");
     };
-    check!((sticks.roll, sticks.throttle) == (0.5, 0.6));
+    check!(sticks.roll == 0.5);
+    check!((sticks.climb - 0.2).abs() < 1e-6);
 }

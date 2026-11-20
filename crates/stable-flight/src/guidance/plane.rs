@@ -221,6 +221,13 @@ impl PlaneGuidance {
             ControlInput::Attitude(sticks) => {
                 Setpoint::Plane(self.sticks(sticks.roll, sticks.pitch, sticks.throttle))
             }
+            // The plane flies on throttle: the climb stick's `[-1, 1]` as the throttle's
+            // `[0, 1]`, the throttle the same ground-station stick gives attitude flight.
+            ControlInput::AltitudeHold(sticks) => Setpoint::Plane(self.sticks(
+                sticks.roll,
+                sticks.pitch,
+                (saturate_unit(sticks.climb) + 1.0) / 2.0,
+            )),
             ControlInput::Rate(sticks) => Setpoint::PlaneRate(BodyRateSetpoint {
                 roll_radps: saturate_unit(sticks.roll_rate) * config.max_rate_radps.x,
                 pitch_radps: saturate_unit(sticks.pitch_rate) * config.max_rate_radps.y,

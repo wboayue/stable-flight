@@ -501,6 +501,12 @@ pub enum ControlInput {
     /// maneuver script (a flip, a roll, a loop). Unlike [`ControlInput::Rate`], the rates are
     /// not stick fractions: they are flown as given, at any attitude.
     AbsoluteRate(AbsoluteRateCommand),
+
+    /// Attitude sticks with a climb-rate stick in place of the throttle, as ArduPilot's AltHold
+    /// and PX4's Altitude mode fly: a centered climb stick holds the height, up climbs and down
+    /// sinks at up to guidance's limits. For a ground station's sprung throttle (QGC's virtual
+    /// joystick), whose released stick would otherwise ask for half thrust.
+    AltitudeHold(AltitudeHoldCommand),
 }
 
 /// Zero-throttle, centered-stick [`ControlInput::Attitude`].
@@ -511,7 +517,7 @@ impl Default for ControlInput {
 }
 
 impl ControlInput {
-    /// Whether this is pilot stick input (attitude or rate). After a link outage, the
+    /// Whether this is pilot stick input (attitude, rate, or altitude hold). After a link outage, the
     /// failsafe hands an armed vehicle back to sticks only once they move, so a stick left
     /// deflected can't take over unattended. Sticks are also a [stream](Self::is_stream).
     ///
@@ -522,12 +528,16 @@ impl ControlInput {
     ///
     /// assert!(ControlInput::Attitude(Default::default()).is_sticks());
     /// assert!(ControlInput::Rate(Default::default()).is_sticks());
+    /// assert!(ControlInput::AltitudeHold(Default::default()).is_sticks());
     /// assert!(!ControlInput::AbsoluteAttitude(Default::default()).is_sticks());
     /// assert!(!ControlInput::Waypoint(Default::default()).is_sticks());
     /// assert!(!ControlInput::Land(Default::default()).is_sticks());
     /// ```
     pub fn is_sticks(&self) -> bool {
-        matches!(self, ControlInput::Attitude(_) | ControlInput::Rate(_))
+        matches!(
+            self,
+            ControlInput::Attitude(_) | ControlInput::Rate(_) | ControlInput::AltitudeHold(_)
+        )
     }
 
     /// Whether this input is a stream that must keep arriving to stay valid (sticks and
@@ -573,6 +583,10 @@ impl ControlInput {
     ///     ControlInput::AbsoluteRate(Default::default()).mode(),
     ///     ControlMode::AbsoluteRate,
     /// );
+    /// assert_eq!(
+    ///     ControlInput::AltitudeHold(Default::default()).mode(),
+    ///     ControlMode::AltitudeHold,
+    /// );
     /// ```
     pub fn mode(&self) -> ControlMode {
         match self {
@@ -582,6 +596,7 @@ impl ControlInput {
             ControlInput::AbsoluteAttitude(_) => ControlMode::AbsoluteAttitude,
             ControlInput::Land(_) => ControlMode::Land,
             ControlInput::AbsoluteRate(_) => ControlMode::AbsoluteRate,
+            ControlInput::AltitudeHold(_) => ControlMode::AltitudeHold,
         }
     }
 }
@@ -610,6 +625,8 @@ pub enum ControlMode {
     Land,
     /// An offboard app or script commands absolute body rates ([`ControlInput::AbsoluteRate`]).
     AbsoluteRate,
+    /// [`ControlInput::AltitudeHold`].
+    AltitudeHold,
 }
 
 /// Represents direct manual control of an aircraft's attitude (orientation).
@@ -668,6 +685,32 @@ pub struct AttitudeCommand {
 
     /// Controls the aircraft's yaw rotation, ranging from `-1.0` (full left turn)
     /// to `1.0` (full right turn).
+    pub yaw: f32,
+}
+
+/// Attitude sticks with a climb-rate stick: [`ControlInput::AltitudeHold`]. Each value is a
+/// stick fraction in `[-1, 1]`; out of range saturates and NaN is centered (the input policy).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{AltitudeHoldCommand, ControlInput};
+///
+/// // Hold the height, rolling a little right.
+/// let hold = ControlInput::AltitudeHold(AltitudeHoldCommand { roll: 0.1, ..Default::default() });
+/// assert!(hold.is_sticks());
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AltitudeHoldCommand {
+    /// Climb rate: `0` (centered) holds the height, `1` climbs at the most guidance allows,
+    /// `-1` sinks at the most (up positive).
+    pub climb: f32,
+    /// Roll angle, as [`AttitudeCommand::roll`]: `-1` full left bank to `1` full right.
+    pub roll: f32,
+    /// Pitch angle, as [`AttitudeCommand::pitch`]: `-1` full nose down to `1` full nose up.
+    pub pitch: f32,
+    /// Yaw rate, as [`AttitudeCommand::yaw`]: `-1` full left to `1` full right.
     pub yaw: f32,
 }
 

@@ -41,11 +41,11 @@ just fly-companion   # the QuadCopterX in RealFlight, flown from the link
 just bridge          # link ⇄ MAVLink for QGC on UDP 14550
 ```
 
-1. **Arm and take off** on the virtual joystick. A centered throttle asks for thrust 0.5,
-   which the QuadCopterX can't hover on (it needs about 0.82), so released the copter sinks
-   ([#441](https://github.com/wboayue/stable-flight/issues/441)). Until that's fixed, turn
-   off **Auto-Center Throttle** under Virtual Joystick, so the throttle stays where you leave
-   it, and set it about 80% up, then adjust until the copter holds its height.
+1. **Arm and take off** on the virtual joystick. The bridge reads its throttle as a climb
+   rate (`--throttle climb`, the default): released, the stick centers and the copter holds
+   its height; push it up to climb (up to 2.5 m/s), down to sink (up to 1.5 m/s). On the
+   ground the motors idle until the stick goes up past the deadzone. Leave **Auto-Center
+   Throttle** on, its default.
 2. **Hover** a few meters up, sticks still.
 3. **Start:** Actions → **Autotune start**. The flight controller holds the copter where it is
    for the whole run, whatever the throttle stick says, and QGC shows **AutoTune: started, 9
@@ -57,9 +57,11 @@ just bridge          # link ⇄ MAVLink for QGC on UDP 14550
    or stop to revert** ends it; the tuned gains fly from then on. The copter keeps holding
    where it is, whatever the throttle stick says, as ArduPilot's AUTOTUNE mode does, until you
    take it back.
-6. **Take it back and land:** set the throttle where the copter hovers, then nudge the roll or
-   pitch stick (past 5%); the sticks fly it again at once. Land on the throttle stick and
-   disarm.
+6. **Take it back:** nudge the roll or pitch stick (past 5%); the sticks fly it again at once,
+   holding its height with the throttle centered.
+7. **Land:** hold the throttle stick down until the motors idle, about 1.5 s after the
+   copter touches down. Let go sooner and it holds its height on the ground at hover thrust;
+   push the stick down again to idle it. Then disarm.
 
 ## Reading the messages
 
@@ -99,8 +101,9 @@ Nothing is saved on the flight controller.
 - **Autotune stop / revert** mid-run puts back the gains from before the run and hands the
   copter back to the sticks.
 - **Moving the roll or pitch stick** past 5% of full deflection does the same: the pilot takes over,
-  as in PX4. Mind the throttle stick: the copter flies on it again at once. After a run ends,
-  the same nudge only takes the copter back: the gains it ended on stay.
+  as in PX4. The sticks fly the copter again at once; with the bridge's `--throttle thrust`,
+  so does the throttle stick's thrust. After a run ends, the same nudge only takes the copter
+  back: the gains it ended on stay.
 - **Disarming** before completion reverts the run too.
 - **A failed stage** ends the run, and the copter keeps holding on the stages already kept
   until you take it back.
