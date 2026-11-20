@@ -2472,11 +2472,10 @@ impl<K: Side> Supervisor<K> {
         }
     }
 
-    /// Ends the run at `stage`: stops its probe and puts back the config as of the last kept
-    /// stage.
-    /// Stops the running probe and puts back the config at [`start`](Self::start), which
-    /// every later stage then reverts to: the end of a run disarmed before completion or
-    /// [`revert`](Self::revert)ed.
+    /// Stops the running probe and puts back the config at [`start`](Self::start): the end of
+    /// a run disarmed before completion or [`revert`](Self::revert)ed. The run's other state
+    /// stays as it was; only a new [`start`](Self::start) leaves `Phase::Reverted`, and it
+    /// resets that state.
     fn revert_to_start<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -2484,13 +2483,13 @@ impl<K: Side> Supervisor<K> {
         flight_loop.stop_probe::<K::Target>();
         if let Some(run_start) = self.run_start {
             restore(flight_loop, run_start);
-            self.last_good = Some(run_start);
-            self.committed = Some(run_start);
         }
         self.phase = Phase::Reverted;
         AutotuneEvent::Reverted
     }
 
+    /// Ends the run at `stage`: stops its probe and puts back the config as of the last kept
+    /// stage.
     fn fail<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
