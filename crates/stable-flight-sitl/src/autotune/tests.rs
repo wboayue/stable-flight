@@ -3,7 +3,9 @@ use stable_flight::commanders::{PlaneTuneHoldConfig, RouteEnd};
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
-use stable_flight::tuning::autotune::{AutotuneAbort, AutotuneEvent, Outcome};
+use stable_flight::tuning::autotune::{
+    Autotune, AutotuneAbort, AutotuneEvent, Envelope, Outcome, StagePlan,
+};
 use stable_flight::tuning::{Measurement, RateModel, StepMetrics, StepSummary, WingModel};
 use stable_flight::view::tailsitter_rotation;
 use stable_flight::{ControlInput, FlightRegime, Vec2, Vec3, VehicleState, WaypointCommand};
@@ -398,6 +400,46 @@ fn inverted_is_a_tilt_past_ninety_degrees_in_the_frame() {
 }
 
 /// A step and a summary read in ms and fractions of the step, `-` where there's no sample.
+/// A gap between ticks past `FREEZE_GAP` is a freeze, measured from priming on the first tick
+/// and from the last tick after it; at the gap or under it isn't. The runner's `host_slow`
+/// passes through in both directions. Rows run in order on one host.
+#[test]
+fn host_timing_reads_freezes_past_the_gap_and_passes_host_slow() {
+    let mut autotune =
+        Autotune::new(&StagePlan::copter_design_search(), Envelope::default()).expect("valid plan");
+    let mut timing = HostTiming::default();
+    // (case, elapsed ms, host slow, froze, slow passed on)
+    let rows = [
+        ("first tick, 30 ms from priming", 30, false, false, false),
+        ("exactly the gap", 80, false, false, false),
+        ("1 ms past the gap", 131, false, true, false),
+        ("a normal tick after a freeze", 135, false, false, false),
+        ("the host turns slow", 139, true, false, true),
+        ("still slow", 143, true, false, true),
+        ("slow and frozen", 300, true, true, true),
+        ("the host recovers", 304, false, false, false),
+    ];
+    for (case, elapsed_ms, host_slow, froze, slow) in rows {
+        let stats = RunStats {
+            elapsed: Duration::from_millis(elapsed_ms),
+            host_slow,
+            ..Default::default()
+        };
+        check!(
+            timing.update(&stats, &mut autotune) == HostTick { froze, slow },
+            "{case}"
+        );
+    }
+
+    // A first tick later than the gap after priming is a freeze too.
+    let mut timing = HostTiming::default();
+    let late = RunStats {
+        elapsed: HostTiming::FREEZE_GAP + Duration::from_millis(1),
+        ..Default::default()
+    };
+    check!(timing.update(&late, &mut autotune).froze);
+}
+
 #[test]
 fn formats_steps_and_summaries() {
     let metrics = StepMetrics {

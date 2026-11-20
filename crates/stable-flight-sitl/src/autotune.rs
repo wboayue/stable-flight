@@ -1,13 +1,14 @@
 //! Simulator-independent pieces of an autotune flight: the commanders that hover on a script
 //! and then land ([`ThenLand`]) or fly a script into plane flight, hold the plane there, and
 //! come home ([`PlaneTuneFlight`]), the checks a run stops or starts on ([`is_inverted`],
-//! [`ThenLand::at_hover_point`]), and the log of each [`AutotuneEvent`] ([`log_event`]), down
+//! [`ThenLand::at_hover_point`]), the host's timing passed to the supervisor ([`HostTiming`]), and the log of each [`AutotuneEvent`] ([`log_event`]), down
 //! to the tuned gains printed for pasting into an airframe ([`TunedConfig`]). Each backend's
 //! autotune example wires its own vehicle around them.
 
 use std::cell::{Cell, RefCell};
 use std::fmt::Debug;
 use std::rc::Rc;
+use std::time::Duration;
 
 use log::{debug, info, warn};
 
@@ -17,7 +18,7 @@ use stable_flight::controllers::Gains;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use stable_flight::stabilizers::plane::{PlaneAxisGains, PlaneLoop, PlaneStabilizerConfig};
-use stable_flight::tuning::autotune::AutotuneEvent;
+use stable_flight::tuning::autotune::{AutotuneEvent, Side, Supervisor};
 use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
 use stable_flight::{
     Command, Commander, ControlInput, FlightRegime, LandCommand, Vec2, VehicleState,
@@ -25,6 +26,7 @@ use stable_flight::{
 };
 
 use crate::commanders::ScriptCommander;
+use crate::runner::RunStats;
 
 #[cfg(test)]
 mod tests;
@@ -457,6 +459,79 @@ impl PlaneTuneSwitch {
 pub fn is_inverted(state: &VehicleState, frame: &UnitQuaternion<f32>) -> bool {
     // The frame's attitude as `VehicleState::rotate_body` builds it.
     (state.attitude * frame).to_rotation_matrix()[(2, 2)] < 0.0
+}
+
+/// Feeds the runner's wall-clock timing to an autotune supervisor, once per tick: a gap
+/// between ticks past [`FREEZE_GAP`](Self::FREEZE_GAP) is a freeze
+/// ([`note_stall`](Supervisor::note_stall)), and the runner's
+/// [`host_slow`](RunStats::host_slow) passes on ([`set_host_slow`](Supervisor::set_host_slow)),
+/// logged at `info` when it changes. Every autotune host on sitl's
+/// [`RealTimeRunner`](crate::RealTimeRunner) calls it from its tick callback.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use stable_flight_sitl::autotune::{HostTick, HostTiming};
+/// use stable_flight_sitl::runner::RunStats;
+/// use stable_flight_sitl::stable_flight::tuning::autotune::{Autotune, Envelope, StagePlan};
+///
+/// let mut autotune = Autotune::new(&StagePlan::copter_design_search(), Envelope::default())?;
+/// let mut timing = HostTiming::default();
+/// let at = |ms| RunStats { elapsed: Duration::from_millis(ms), ..Default::default() };
+///
+/// assert_eq!(timing.update(&at(4), &mut autotune), HostTick { froze: false, slow: false });
+/// // 100 ms without a tick: a freeze.
+/// assert_eq!(timing.update(&at(104), &mut autotune), HostTick { froze: true, slow: false });
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Default, Clone)]
+pub struct HostTiming {
+    /// When the last tick ran, wall clock since priming.
+    last_tick: Duration,
+    /// The runner's `host_slow` as of the last tick.
+    slow: bool,
+}
+
+/// What one [`HostTiming::update`] passed to the supervisor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostTick {
+    /// The gap since the last tick was a freeze: [`note_stall`](Supervisor::note_stall).
+    pub froze: bool,
+    /// The host runs slow: [`set_host_slow`](Supervisor::set_host_slow)'s argument.
+    pub slow: bool,
+}
+
+impl HostTiming {
+    /// The longest wall-clock gap between ticks that isn't a freeze: past the fit's 40 ms of
+    /// delay and a rate step's 30 ms rise, and several of X-Plane's frames (8–17 ms apart). The
+    /// runner's resyncs aren't freezes: at about 223 Hz it falls 100 ms behind every few seconds
+    /// with no tick late by much (QuadCopterX in RealFlight: 2,216 resyncs in a run, 3 gaps over
+    /// 100 ms, #524).
+    pub const FREEZE_GAP: Duration = Duration::from_millis(50);
+
+    /// Passes this tick's timing in `stats` to `autotune`, and returns what it passed. The
+    /// first tick measures its gap from priming.
+    pub fn update<K: Side>(&mut self, stats: &RunStats, autotune: &mut Supervisor<K>) -> HostTick {
+        // A freeze spoils a running probe's timing (it runs again), and the vehicle moved
+        // meanwhile.
+        let froze = stats.elapsed.saturating_sub(self.last_tick) > Self::FREEZE_GAP;
+        if froze {
+            autotune.note_stall();
+        }
+        self.last_tick = stats.elapsed;
+        // The runner logs the slow stretch itself, with its rate and time.
+        if stats.host_slow != self.slow {
+            self.slow = stats.host_slow;
+            info!("autotune {}", if self.slow { "waits" } else { "goes on" });
+        }
+        autotune.set_host_slow(self.slow);
+        HostTick {
+            froze,
+            slow: self.slow,
+        }
+    }
 }
 
 /// A stabilizer config an autotune tunes, as [`log_event`] prints it: a stage's gains, and the

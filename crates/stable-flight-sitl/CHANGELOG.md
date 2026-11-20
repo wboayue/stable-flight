@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `autotune::HostTiming` (#705): passes the runner's timing to an autotune supervisor each
+  tick, a gap past `HostTiming::FREEZE_GAP` (50 ms) as a freeze (`note_stall`) and
+  `RunStats::host_slow` as `set_host_slow`, logging when the host turns slow or recovers. The
+  RealFlight and X-Plane autotune examples use it.
+- `RunStats` implements `Default` (#705).
+
 ### Changed
 
 - The recorders' `stick_yaw` and `stick_throttle` columns read `ControlInput::AltitudeHold`:
