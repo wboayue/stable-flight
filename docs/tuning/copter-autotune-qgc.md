@@ -51,8 +51,9 @@ just bridge          # link ⇄ MAVLink for QGC on UDP 14550
    for the whole run, whatever the throttle stick says, and QGC shows **AutoTune: started, 9
    stages**.
 4. **Follow it** in QGC's messages (the bell, top right). QGC speaks the `NOTICE` lines.
-5. **Let it finish:** 3 to 5 minutes on the in-repo sim (202–280 s for the design search,
-   [#296](https://github.com/wboayue/stable-flight/issues/296)). **AutoTune: complete: keep,
+5. **Let it finish:** 3 to 5 minutes: the design search took 202–280 s on the in-repo sim
+   ([#296](https://github.com/wboayue/stable-flight/issues/296)) and 288 s on the RealFlight QuadCopterX
+   ([#703](https://github.com/wboayue/stable-flight/pull/703)). **AutoTune: complete: keep,
    or stop to revert** ends it; the tuned gains fly from then on, and the hold hands the copter
    back to the sticks.
 6. **Land** on the throttle stick and disarm.
