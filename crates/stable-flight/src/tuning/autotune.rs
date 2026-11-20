@@ -29,6 +29,7 @@ use procedure::Action;
 pub use side::{CopterSide, Side, SideConfig, SideTunable};
 use side::{Decide, Motion, RateFilters, StageView};
 
+pub mod held;
 mod plane;
 mod procedure;
 mod side;

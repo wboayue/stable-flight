@@ -12,7 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `commanders::AutotuneHold` (#307): wraps the commander a copter flies and, while engaged,
   holds it where it was, so an autotune started from a ground station's sticks (which hold no
   height) probes a still vehicle. A disarm, a land, or a roll or pitch stick past
-  `AutotuneHoldConfig::override_stick` (0.05, PX4's) hands back and reports an override.
+  `AutotuneHoldConfig::override_stick` (0.05, PX4's) hands back and reports an override;
+  offboard inputs don't.
+- `tuning::autotune::held` (#307): `start`, `stop`, and `step` move an `Autotune` and its
+  `AutotuneHold` together, whatever triggers the run. A take-over mid-run reverts it; a run
+  that completes or fails keeps holding until the pilot takes over or a stop.
 - `Supervisor::revert` (#307): puts back the config a run started from, mid-run or after it
   ended, as a disarm before completion does.
 - `FlightLoop::commander_mut` (#307), to change the commander between ticks.
