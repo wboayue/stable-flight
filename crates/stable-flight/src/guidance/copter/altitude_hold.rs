@@ -167,7 +167,7 @@ impl CopterGuidance {
     /// guidance was primed, or the vehicle held still for [`DEFAULT_TOUCHDOWN_HOLD_S`] against a
     /// stick down, its target at least a quarter of the
     /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m) below it
-    /// ([`holds_on_ground`](Self::holds_on_ground)). ArduPilot's AltHold idles the same way
+    /// ([`update_ground`](Self::update_ground)). ArduPilot's AltHold idles the same way
     /// (`_TakeOff::triggered_ms`, and its land detector on the throttle held low).
     pub(super) fn altitude_hold(
         &mut self,
@@ -175,7 +175,7 @@ impl CopterGuidance {
         command: &AltitudeHoldCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        let tilt_rad = self.stick_tilt(
+        let tilt_rad = self.stick_attitude(
             dt,
             command.roll,
             command.pitch,
@@ -183,7 +183,7 @@ impl CopterGuidance {
             estimated_state,
         );
         let rate_mps = self.config.altitude_hold.climb_rate_mps(command.climb);
-        let on_ground = self.holds_on_ground(dt, rate_mps, estimated_state);
+        let on_ground = self.update_ground(dt, rate_mps, estimated_state);
         let thrust = if on_ground {
             0.0
         } else {
@@ -217,7 +217,7 @@ impl CopterGuidance {
     /// the RealFlight QuadCopterX locked its height there and sat at hover thrust, and a later
     /// push couldn't idle it (#441). The target condition keeps a slow sink in the air, which
     /// the vehicle follows, from reading as a touchdown.
-    fn holds_on_ground(&mut self, dt: f32, rate_mps: f32, estimated_state: &VehicleState) -> bool {
+    fn update_ground(&mut self, dt: f32, rate_mps: f32, estimated_state: &VehicleState) -> bool {
         let airborne_height_m = self.config.airborne_height_m;
         // Entering on the ground means idling there: the last setpoint idled (or guidance was
         // just primed, as at arming) within `airborne_height_m` of the ground. A hover that

@@ -782,7 +782,7 @@ impl CopterGuidance {
         attitude_command: &AttitudeCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        let tilt_rad = self.stick_tilt(
+        let tilt_rad = self.stick_attitude(
             dt,
             attitude_command.roll,
             attitude_command.pitch,
@@ -813,7 +813,7 @@ impl CopterGuidance {
     /// heading-hold target with the `yaw` stick at up to
     /// [`stick_yaw_rate_radps`](CopterGuidanceConfig::stick_yaw_rate_radps). Sticks from input
     /// devices can be out of range or NaN: they saturate, NaN centered (see `crate::math`).
-    fn stick_tilt(
+    fn stick_attitude(
         &mut self,
         dt: f32,
         roll: f32,
