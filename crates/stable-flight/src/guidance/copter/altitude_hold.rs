@@ -148,8 +148,11 @@ impl HoldState {
 /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m), its target must be
 /// for a vehicle held still against a stick down to read as on the ground: a target that far
 /// below and a vehicle not following it means the ground is in the way. In the air the vehicle
-/// keeps up with a sinking target to within its tracking error, centimeters on the sim.
-const GROUNDED_TARGET_LEASHES: f32 = 0.5;
+/// keeps up with a sinking target to within its tracking error, centimeters on the sim. At a
+/// quarter, a full-down push on a vehicle resting on the ground idles it in 1.45 s on the sim,
+/// against 1.63 s at a half; the RealFlight QuadCopterX's pilot let go after about 1.4 s
+/// (#441).
+const GROUNDED_TARGET_LEASHES: f32 = 0.25;
 
 impl CopterGuidance {
     /// Altitude-hold flight: the roll, pitch, and yaw sticks as attitude flight's, and the
@@ -162,7 +165,7 @@ impl CopterGuidance {
     /// armed) no higher than
     /// [`airborne_height_m`](super::CopterGuidanceConfig::airborne_height_m) above where
     /// guidance was primed, or the vehicle held still for [`DEFAULT_TOUCHDOWN_HOLD_S`] against a
-    /// stick down, its target at least half the
+    /// stick down, its target at least a quarter of the
     /// [`altitude_leash_m`](super::CopterGuidanceConfig::altitude_leash_m) below it
     /// ([`holds_on_ground`](Self::holds_on_ground)). ArduPilot's AltHold idles the same way
     /// (`_TakeOff::triggered_ms`, and its land detector on the throttle held low).

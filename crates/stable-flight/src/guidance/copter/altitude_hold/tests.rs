@@ -228,7 +228,7 @@ fn the_target_follows_the_stick_and_stays_leashed() {
 }
 
 /// A descent on the stick that the ground stops idles the motors there, once the target has
-/// run half the leash below the vehicle and the vehicle has held still for the touchdown hold;
+/// run a quarter of the leash below the vehicle and the vehicle has held still for the touchdown hold;
 /// the next climb takes off from the vehicle.
 #[test]
 fn a_descent_the_ground_stops_idles_there() {
@@ -246,10 +246,10 @@ fn a_descent_the_ground_stops_idles_there() {
         }
     }
     let idled_s = idled_s.expect("touched down");
-    // The target, leashed 1 m over the stopped vehicle, sinks to 0.5 m below it at 1.5 m/s
-    // (1 s), then the vehicle holds still for the 1 s touchdown hold.
+    // The target, leashed 1 m over the stopped vehicle, sinks to 0.25 m below it at 1.5 m/s
+    // (0.83 s), then the vehicle holds still for the 1 s touchdown hold.
     check!(
-        idled_s > 1.9 && idled_s < 2.2,
+        idled_s > 1.75 && idled_s < 1.95,
         "after the target ran below and the touchdown hold: {idled_s} s"
     );
     check!(guidance.altitude_target_m == None);

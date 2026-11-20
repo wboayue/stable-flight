@@ -42,15 +42,15 @@ const RATE_TOLERANCE_MPS: f32 = 0.15;
 /// ground (#343).
 const MAX_SINK_OVERSHOOT_M: f32 = 0.9;
 
-/// How long after a touchdown the motors may still run, in s: the target runs half the 1 m
-/// leash below the stopped vehicle at 1.5 m/s, then the vehicle holds still for the 1 s
-/// touchdown hold (`DEFAULT_TOUCHDOWN_HOLD_S`); 1.34 s on the sim (#441), 0.26 s of margin.
-const MAX_IDLE_DELAY_S: f32 = 1.6;
+/// How long after a touchdown the motors may still run, in s: the target runs a quarter of the
+/// 1 m leash below the stopped vehicle, then the vehicle holds still for the 1 s touchdown hold
+/// (`DEFAULT_TOUCHDOWN_HOLD_S`); 1.17 s on the sim (#441), 0.23 s of margin.
+const MAX_IDLE_DELAY_S: f32 = 1.4;
 
 /// How long a stick pushed down on a vehicle already resting on the ground takes to idle it, in
-/// s: the target ramps up to the sink rate and runs half the leash below the ground, then the
-/// 1 s touchdown hold; 1.63 s on the sim (#441), 0.37 s of margin.
-const MAX_PUSH_IDLE_S: f32 = 2.0;
+/// s: the target ramps up to the sink rate and runs a quarter of the leash below the ground,
+/// then the 1 s touchdown hold; 1.45 s on the sim (#441), 0.25 s of margin.
+const MAX_PUSH_IDLE_S: f32 = 1.7;
 
 fn flight() -> (SimLoop<ClimbStick>, ClimbStick) {
     let stick = ClimbStick::default();
